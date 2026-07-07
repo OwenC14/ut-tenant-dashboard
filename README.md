@@ -14,7 +14,7 @@ Build order (spec §10):
 - [x] 3. Poller for one device
 - [x] 4. Nightly rollup job + cost calculation
 - [x] 5. Dashboard API + minimal frontend
-- [ ] 6. Multi-tenant isolation (second/third property)
+- [x] 6. Multi-tenant isolation (second/third property)
 - [ ] 7. Onboarding flow at scale
 - [ ] 8. Organizations model + HA/LA portfolio view
 - [ ] 9. Agreements/consent_records sign-up flow
@@ -144,6 +144,21 @@ verify → session cookie → all four ranges returning correctly-aggregated,
 property-isolated data (checked against hand-computed totals from synthetic
 `daily_rollups` rows) → rendered dashboard and login pages screenshotted in a
 real browser → unauthenticated `/api/dashboard` request confirmed to 401.
+
+## Multi-tenant isolation (§10 step 6)
+
+No dedicated isolation code was needed — by construction, every tenant-facing
+route derives `propertyId` from the session (`req.propertyId`, set by
+`requireSession`) and never from a client-supplied parameter, so there's no
+request shape that lets one tenant address another's property.
+
+Verified anyway, empirically, with three properties on distinct Fox devices and
+distinct tenant emails: polled and rolled up independently (confirmed each
+property's `meter_readings`/`daily_rollups` hold its own device's numbers, not
+mixed or overwritten), then logged in as all three tenants concurrently and
+confirmed each session's `/api/dashboard` returns only that property's figures.
+Also confirmed a consumed magic-link token can't be replayed for a second
+session.
 
 ## Database
 
