@@ -11,8 +11,8 @@ Build order (spec §10):
 
 - [x] 1. Scaffold repo, Postgres schema, deploy skeleton
 - [x] 2. Fox OAuth flow for one test device
-- [ ] 3. Poller for one device
-- [ ] 4. Nightly rollup job + cost calculation
+- [x] 3. Poller for one device
+- [x] 4. Nightly rollup job + cost calculation
 - [ ] 5. Dashboard API + minimal frontend
 - [ ] 6. Multi-tenant isolation (second/third property)
 - [ ] 7. Onboarding flow at scale
@@ -58,6 +58,48 @@ time this runs with a real `client_id` — that one file is the only thing that 
 need to change if they differ. The flow itself (redirect, state/CSRF check, token
 exchange, encrypted storage, refresh) has been verified end-to-end locally against a
 mock Fox server standing in for foxesscloud.com.
+
+## Poller (spec §4.2, §4.3)
+
+`npm run poll` — for every property with a stored Fox access token, queries the
+`/op/v0/device/report/query` report endpoint for `generation`/`loads`/`feedin`/
+`gridConsumption`/`chargeEnergyToTal`/`dischargeEnergyToTal`, sums the day's hourly
+points, and writes one `meter_readings` row. Runs the §4.2 reconciliation check
+(`loads` ≈ solar self-consumed + battery discharge + grid consumption) and logs a
+warning — doesn't fail the poll — when a property's numbers don't add up, since
+that's usually a meter/CT clamp misconfiguration rather than a real usage pattern.
+
+Sequential with a ~1.1s gap between properties to respect Fox's 1 req/sec cap — fine
+at pilot scale (≤200 devices, §2); a job queue replaces this at 20k devices.
+
+Same caveat as the OAuth client: Fox's public docs don't fully confirm whether the
+report endpoint's hourly datapoints are increments or a running total, or the exact
+OAuth-mode request signing — `src/fox/reportClient.ts` assumes increments (sums
+them) and carries the signing scheme from the docs. Verify against a real device the
+first time this runs live and adjust that one file if needed. Verified locally
+end-to-end against a mock report endpoint, including the reconciliation-mismatch
+warning path.
+
+## Nightly rollup (spec §5, §10 step 4)
+
+`npm run rollup [YYYY-MM-DD]` — aggregates each property's last `meter_readings` row
+of the day (a cumulative-for-the-day snapshot) into one `daily_rollups` row, with
+cost figures computed using the *exact* formulas from
+`docs/UT_Phase1_Tenant_Calculator.html`'s `render()`, just fed the real solar/
+battery/grid split instead of a slider-derived estimate:
+
+```
+currentBill = consumption * gridCapRate + standingChargeDaily
+newBill     = batteryCoveredKwh * offpeakRate + gridCoveredKwh * gridCapRate + standingChargeDaily
+saving      = currentBill - newBill
+```
+
+Tariff rates live in `tariff_rates` (effective-dated, not hardcoded — Ofgem's price
+cap changes quarterly, §5) seeded with the calculator's current Jul-Sep 2026 rates.
+Add a new row with a future `effective_from` each time Ofgem's cap changes; past
+rollups keep using the rate that was live at the time. Upserts on `(property_id,
+date)`, so re-running a date is safe if raw readings get reprocessed. Defaults to
+yesterday (UTC) for the nightly cron; pass a date to backfill/reprocess.
 
 ## Database
 
