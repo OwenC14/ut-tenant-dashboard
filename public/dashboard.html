@@ -9,6 +9,16 @@
 <meta name="theme-color" content="#3D4347">
 </head>
 <body>
+
+<div id="appTermsModal" class="modal-overlay" style="display:none;">
+  <div class="modal-box">
+    <h2>Terms of service</h2>
+    <p class="hint">Please review and accept before using your dashboard.</p>
+    <div class="document-text" id="appTermsText"></div>
+    <button type="button" class="btn" id="appTermsAccept">I accept</button>
+  </div>
+</div>
+
 <header>
   <div class="inner">
     <div class="brand-lockup">
@@ -30,6 +40,17 @@
 </div>
 
 <div class="wrap">
+
+  <div id="haDataSharingPrompt" class="banner" style="display:none;">
+    <strong>Share your data with your housing/local authority partner?</strong>
+    <div class="document-text" id="haDataSharingText"></div>
+    <p class="hint">This is separate from using your own dashboard — declining keeps full access to everything above. You can change your answer any time in Data sharing settings below.</p>
+    <div class="actions">
+      <button type="button" class="btn" id="haAccept">Accept</button>
+      <button type="button" class="btn btn-secondary" id="haDecline">Decline</button>
+    </div>
+  </div>
+
   <div id="noData" class="card" style="display:none;">
     <h2>No data yet</h2>
     <p class="hint">We haven't received any readings for your property yet. Check back after your first full day of monitoring.</p>
@@ -82,6 +103,13 @@
       </div>
     </div>
     <div class="source-note" id="periodNote"></div>
+  </div>
+
+  <div class="card" style="margin-top:24px;">
+    <h2>Data sharing settings</h2>
+    <p class="hint">Whether your housing/local authority partner (if any) can see your individual usage data. This never affects your own access to this dashboard.</p>
+    <div class="demand-readout" id="haStatusText">Loading…</div>
+    <button type="button" class="btn" id="haToggle" style="margin-top:14px;"></button>
   </div>
 </div>
 

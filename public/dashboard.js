@@ -39,18 +39,106 @@ async function loadRange(range) {
     `${data.periodStart} to ${data.periodEnd} (${data.days} day${data.days === 1 ? '' : 's'} of data)`;
 }
 
-const buttons = document.querySelectorAll('#rangeSelector button');
-buttons.forEach((btn) => {
-  btn.addEventListener('click', () => {
-    buttons.forEach((b) => b.classList.remove('active'));
-    btn.classList.add('active');
-    loadRange(btn.dataset.range);
+let rangeSelectorInitialized = false;
+function initRangeSelector() {
+  if (rangeSelectorInitialized) return;
+  rangeSelectorInitialized = true;
+  const buttons = document.querySelectorAll('#rangeSelector button');
+  buttons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      buttons.forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+      loadRange(btn.dataset.range);
+    });
   });
-});
+  // Default view per spec §7: last 4 weeks, not "that day" — a single day's
+  // weather can be misleading on a tenant's first login.
+  loadRange('4weeks');
+}
 
-// Default view per spec §7: last 4 weeks, not "that day" — a single day's
-// weather can be misleading on a tenant's first login.
-loadRange('4weeks');
+async function postConsent(type, status) {
+  await fetch(`/api/consent/${type}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ status }),
+  });
+}
+
+function renderHaSettings(haDataSharing) {
+  const statusText = document.getElementById('haStatusText');
+  const toggle = document.getElementById('haToggle');
+  const isShared = haDataSharing.status === 'accepted';
+
+  statusText.textContent = isShared
+    ? 'Currently sharing your usage data with your housing/local authority partner.'
+    : 'Not currently sharing your usage data with any housing/local authority partner.';
+  toggle.textContent = isShared ? 'Withdraw sharing' : 'Enable sharing';
+
+  toggle.onclick = async () => {
+    await postConsent('ha_data_sharing', isShared ? 'withdrawn' : 'accepted');
+    checkConsentAndLoad();
+  };
+}
+
+function showHaPrompt(haDataSharing) {
+  document.getElementById('haDataSharingText').textContent = haDataSharing.documentTextOrUrl;
+  const banner = document.getElementById('haDataSharingPrompt');
+  banner.style.display = 'block';
+
+  const hide = () => {
+    banner.style.display = 'none';
+  };
+  document.getElementById('haAccept').onclick = async () => {
+    await postConsent('ha_data_sharing', 'accepted');
+    hide();
+    checkConsentAndLoad();
+  };
+  document.getElementById('haDecline').onclick = async () => {
+    await postConsent('ha_data_sharing', 'declined');
+    hide();
+    checkConsentAndLoad();
+  };
+}
+
+async function checkConsentAndLoad() {
+  const res = await fetch('/api/consent/status', { credentials: 'include' });
+  if (res.status === 401) {
+    window.location.href = '/index.html';
+    return;
+  }
+  const { appTerms, haDataSharing } = await res.json();
+
+  if (!appTerms || appTerms.status !== 'accepted') {
+    document.getElementById('appTermsText').textContent = appTerms ? appTerms.documentTextOrUrl : 'No terms configured.';
+    document.getElementById('appTermsModal').style.display = 'flex';
+    document.getElementById('appTermsAccept').onclick = async () => {
+      await postConsent('app_terms', 'accepted');
+      document.getElementById('appTermsModal').style.display = 'none';
+      checkConsentAndLoad();
+    };
+    return;
+  }
+
+  document.getElementById('appTermsModal').style.display = 'none';
+
+  // §9a.4 point 2: distinct step, not folded into app_terms, not a
+  // forced gate — only shown when this property has never decided for the
+  // CURRENT agreement version (status null covers both "never asked" and
+  // "asked under an old version that's since changed").
+  if (haDataSharing && haDataSharing.status === null) {
+    showHaPrompt(haDataSharing);
+  } else {
+    document.getElementById('haDataSharingPrompt').style.display = 'none';
+  }
+  if (haDataSharing) {
+    renderHaSettings(haDataSharing);
+  }
+
+  initRangeSelector();
+}
+
+checkConsentAndLoad();
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js').catch(() => {});

@@ -9,6 +9,7 @@ import { dashboardRouter } from './routes/dashboard';
 import { adminRouter } from './routes/admin';
 import { orgAuthRouter } from './routes/orgAuth';
 import { portfolioRouter } from './routes/portfolio';
+import { consentRouter } from './routes/consent';
 
 const app = express();
 app.use(express.json());
@@ -30,6 +31,7 @@ app.use('/api', dashboardRouter);
 app.use('/admin', adminRouter);
 app.use('/org-auth', orgAuthRouter);
 app.use('/portfolio', portfolioRouter);
+app.use('/api/consent', consentRouter);
 
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
   console.error(err);

@@ -17,7 +17,10 @@ Build order (spec §10):
 - [x] 6. Multi-tenant isolation (second/third property)
 - [x] 7. Onboarding flow at scale
 - [x] 8. Organizations model + HA/LA portfolio view
-- [ ] 9. Agreements/consent_records sign-up flow
+- [x] 9. Agreements/consent_records sign-up flow
+
+All nine build-order steps from spec §10 are complete. See "Known gaps before
+real go-live" below for what still needs real (non-placeholder) input from UT.
 
 ## Stack
 
@@ -214,19 +217,95 @@ can never resolve to a `propertyId` or vice versa (isolation "one level up",
   `PATCH /admin/properties/:id/organization` — same shared-admin-key API as
   onboarding (step 7).
 
-**`drilldownAvailable` is hardcoded `false` for every property right now, on
-purpose.** Per-property usage-data drill-down requires the tenant's live,
-current `ha_data_sharing` consent (§9a.3) — the `consent_records` table it
-must check doesn't exist until step 9, and the build order sequences
-organizations *before* agreements specifically so drill-down can never ship
-without a real consent gate behind it. The drill-down endpoint itself isn't
-built yet either; step 9 adds both the consent check and the endpoint together.
+**`drilldownAvailable` was hardcoded `false` for every property when this
+section was first built (step 8) — the real check, and the drill-down
+endpoint itself, were added in step 9 below once `consent_records` existed.**
+The build order deliberately sequences organizations before agreements so
+drill-down could never ship without a real consent gate behind it.
 
 Verified end-to-end locally: two organizations, cross-org isolation (org B's
 session sees zero of org A's three properties), portfolio totals summing only
 properties with rollup data while the property list still includes the one
 with none, and the stale property (5-day-old reading, no rollup ever)
 correctly flagged — checked in a real browser via screenshot.
+
+## Consent flow (spec §9a.4, §10 step 9)
+
+`agreements` (versioned, `effective_from`-dated) + `consent_records`
+(append-only — every accept/decline/withdraw is a new row, never an overwrite).
+A property's current status for an agreement type is always "the most recent
+`consent_records` row for that `property_id` + the *current* `agreement_id`" —
+queried live in `src/consent/agreements.ts`, never cached.
+
+- `GET /api/consent/status` — current `app_terms` and `ha_data_sharing` status
+  (plus document text) for the authenticated tenant.
+- `POST /api/consent/:type { status }` — records a decision against the
+  current agreement for that type. `app_terms` only accepts `status: accepted`
+  (spec §9a.4 point 1: it's an accept-to-continue gate, no decline path).
+  `ha_data_sharing` accepts `accepted` / `declined` / `withdrawn` (point 2: a
+  real, recorded decline that doesn't block anything, and a later change of
+  mind either direction).
+- `GET /api/dashboard` now 403s with `app_terms_not_accepted` until the tenant
+  accepts the current `app_terms` version (`requireAppTermsAccepted`
+  middleware) — `ha_data_sharing` never gates the tenant's own dashboard,
+  only HA/LA drill-down.
+- Bumping an agreement's `version` (new row, same `type`) makes every
+  property's status for that type come back `null` again automatically —
+  their old consent was for a different `agreement_id`, so they're
+  re-prompted next visit without any extra "did the version change" code
+  (spec §9a.4 point 3).
+
+Frontend (`public/dashboard.js`): a blocking modal for `app_terms`, a
+dismissable banner for `ha_data_sharing` shown only when status is `null` for
+the current version, and a "Data sharing settings" card with a one-step
+accept/withdraw toggle (spec §9a.4: "withdrawal must be at least as easy as
+giving consent was").
+
+The portfolio drill-down endpoint (`GET /portfolio/properties/:id`, added
+alongside this) refuses rather than errors when consent isn't currently
+`accepted` — `403 { error: 'not_shared' }` — matching §9a.3's "not a data
+fault" framing. `public/portfolio.js`'s "View usage data" link calls this for
+real now (step 8 shipped it as a dead link on purpose, pending this table).
+
+**Placeholder legal text, not real.** `migrations/005_agreements.sql` seeds
+both agreements with clearly-marked placeholder `document_text_or_url` —
+spec §9 decision 6 says the real `ha_data_sharing` document/clause was
+"clarified internally by UT" but that text isn't in the spec handed to this
+build. Replace both rows' `document_text_or_url` with the real UT-legal-approved
+text/URL before any real tenant sees this flow; insert a new row with the next
+`version` rather than editing the existing one, so the version-bump
+re-prompt behaviour applies correctly.
+
+Verified end-to-end locally: dashboard 403s before `app_terms` acceptance,
+`app_terms` correctly rejects a decline attempt, full accept→withdraw→re-accept
+cycle preserved as 4 distinct rows in `consent_records`, a version bump
+resets status to `null` and re-prompts, portfolio drill-down refused before
+consent and returns real figures immediately after — all checked via curl and
+via a real browser screenshot of the modal → banner → settings sequence a
+first-time tenant actually sees.
+
+## Known gaps before real go-live
+
+Everything in spec §10's build order (steps 1-9) is implemented and verified
+against mocks/synthetic data. Before this touches a real tenant or real Fox
+hardware, these need real input that wasn't available while building:
+
+- **Fox OAuth field names/signing** (`src/fox/client.ts`,
+  `src/fox/reportClient.ts`) — built from Fox's public docs, which don't give
+  a fully explicit schema. Confirm against Fox's sandbox with UT's real
+  `client_id`/`client_secret` (§9 decision 2) and adjust those two files if
+  needed — nothing else should need to change.
+- **Real email provider** (`src/lib/mailer.ts`) — currently logs the magic
+  link instead of sending it.
+- **Real legal text** for `app_terms` and `ha_data_sharing`
+  (`migrations/005_agreements.sql`) — currently clearly-marked placeholders.
+- **Real UT logo/icon assets** (`public/manifest.json`, header `logo-box`) —
+  currently the calculator's own text/colour-mark fallback, not a fabricated
+  logo.
+- **Admin auth is a single shared bearer token**, not real UT staff accounts —
+  fine at pilot scale (§2), revisit before scale-out.
+- **Actual deployment** — `render.yaml` is a tested-locally blueprint; nobody
+  has provisioned a real Render account/database against it yet.
 
 ## Database
 
