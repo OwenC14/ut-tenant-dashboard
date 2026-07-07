@@ -1,0 +1,28 @@
+{
+  "name": "ut-tenant-dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "description": "UT Tenant Savings Dashboard — pulls Fox ESS generation/battery/grid data and serves tenant savings dashboards.",
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "migrate": "tsx src/db/migrate.ts"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "pg": "^8.12.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.14.0",
+    "@types/pg": "^8.11.6",
+    "tsx": "^4.16.2",
+    "typescript": "^5.5.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

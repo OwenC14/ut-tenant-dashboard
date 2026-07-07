@@ -1,0 +1,22 @@
+# Render deploy skeleton (§3, §10 step 1).
+# Background worker(s) for the poller/token-refresher/rollup jobs (§6) get added
+# as separate `type: worker` / `type: cron` services once those jobs exist —
+# not needed for the initial scaffold.
+services:
+  - type: web
+    name: ut-tenant-dashboard-api
+    env: node
+    plan: starter
+    buildCommand: npm install && npm run build && npm run migrate
+    startCommand: npm run start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: ut-tenant-dashboard-db
+          property: connectionString
+
+databases:
+  - name: ut-tenant-dashboard-db
+    plan: starter
