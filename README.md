@@ -15,7 +15,7 @@ Build order (spec §10):
 - [x] 4. Nightly rollup job + cost calculation
 - [x] 5. Dashboard API + minimal frontend
 - [x] 6. Multi-tenant isolation (second/third property)
-- [ ] 7. Onboarding flow at scale
+- [x] 7. Onboarding flow at scale
 - [ ] 8. Organizations model + HA/LA portfolio view
 - [ ] 9. Agreements/consent_records sign-up flow
 
@@ -159,6 +159,39 @@ mixed or overwritten), then logged in as all three tenants concurrently and
 confirmed each session's `/api/dashboard` returns only that property's figures.
 Also confirmed a consumed magic-link token can't be replayed for a second
 session.
+
+## Onboarding (spec §9 decision 1, §10 step 7)
+
+`/admin/*` — property onboarding, protected by a shared bearer token
+(`ADMIN_API_KEY`, not a full admin user/role system — reasonable at pilot scale
+with a small install team, revisit before scale-out per §2):
+
+- `POST /admin/properties` — create one property; returns its id and a
+  ready-to-share Fox consent link (`GET /oauth/fox/authorize?propertyId=...`).
+- `POST /admin/properties/bulk { properties: [...] }` — create many in one call
+  ("at scale", §10 step 7) without needing a CSV parser; one bad/duplicate row
+  reports an error for that row without aborting the rest of the batch.
+- `GET /admin/properties` — list every property with onboarding status (Fox
+  linked? tenant email set? last reading/rollup?) so install staff can see
+  what's still outstanding across the pilot's 100-200 properties.
+- `public/admin.html` — a minimal UI over the same API (prompts once for the
+  admin key, stores it in `localStorage`): a form to add a property and a
+  table of onboarding status with each property's Fox consent link.
+
+Per-property install/commissioning order (§4.1, §9 decision 1): (1) confirm or
+create the tenant's Fox Cloud account — the OAuth consent flow depends on it
+existing; (2) install the hardware and note the device serial number; (3) add
+the property via `/admin/properties`; (4) send the tenant the Fox consent link
+to link their device; (5) once you have the tenant's email, set
+`tenant_email` (re-`POST /admin/properties` isn't wired for updates yet — a
+direct `UPDATE properties` is the pilot-scale stopgap) so they can request a
+dashboard magic link. Deliberately not gated on any consent/agreement step
+yet — that's step 9, sequenced after onboarding on purpose (§10).
+
+Verified end-to-end locally: unauthorized/wrong-key rejection, single create,
+duplicate device-SN/email rejection (409), bulk import with a mix of
+valid/invalid/duplicate rows, and the admin page exercised in a real browser
+(prompt → form submit → table refresh with the new row).
 
 ## Database
 

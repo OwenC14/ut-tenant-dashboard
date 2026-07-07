@@ -6,6 +6,7 @@ import { pool } from './db/pool';
 import { oauthRouter } from './routes/oauth';
 import { authRouter } from './routes/auth';
 import { dashboardRouter } from './routes/dashboard';
+import { adminRouter } from './routes/admin';
 
 const app = express();
 app.use(express.json());
@@ -24,6 +25,7 @@ app.get('/health', async (_req, res) => {
 app.use('/oauth', oauthRouter);
 app.use('/auth', authRouter);
 app.use('/api', dashboardRouter);
+app.use('/admin', adminRouter);
 
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
   console.error(err);
