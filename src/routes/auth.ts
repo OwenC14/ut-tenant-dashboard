@@ -3,11 +3,60 @@ import { pool } from '../db/pool';
 import { createMagicLink, consumeMagicLink, createSession } from '../auth/session';
 import { sendMagicLinkEmail } from '../lib/mailer';
 import { asyncHandler } from '../lib/asyncHandler';
+import { isUniqueViolation } from '../lib/db';
 import { env } from '../config/env';
 
 export const authRouter = Router();
 
 const SESSION_COOKIE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+
+// Tenant self-signup: claims an already-onboarded-but-unclaimed property
+// using the installer-given code, then immediately sends a login link so
+// signup and first login are one continuous flow. No rate limiting yet on
+// this endpoint — the code space (33M combinations) resists casual guessing
+// but this is a real gap to close before go-live (see README).
+authRouter.post(
+  '/signup',
+  asyncHandler(async (req, res) => {
+    const code = String(req.body?.code ?? '')
+      .trim()
+      .toUpperCase();
+    const email = String(req.body?.email ?? '')
+      .trim()
+      .toLowerCase();
+    if (!code || !email) {
+      res.status(400).json({ error: 'code and email are required' });
+      return;
+    }
+
+    const { rows } = await pool.query('SELECT id, tenant_email FROM properties WHERE signup_code = $1', [code]);
+    if (rows.length === 0) {
+      res.status(400).json({ error: 'invalid_code', message: "We couldn't find a property with that installation reference." });
+      return;
+    }
+    if (rows[0].tenant_email !== null) {
+      res.status(409).json({ error: 'already_claimed', message: 'This property already has an account. Try signing in instead.' });
+      return;
+    }
+
+    const propertyId = rows[0].id;
+    try {
+      await pool.query('UPDATE properties SET tenant_email = $1 WHERE id = $2', [email, propertyId]);
+    } catch (err) {
+      if (isUniqueViolation(err)) {
+        res.status(409).json({ error: 'email_in_use', message: 'That email is already registered to a different property.' });
+        return;
+      }
+      throw err;
+    }
+
+    const token = await createMagicLink(propertyId, email);
+    const link = new URL(`/auth/verify?token=${token}`, env.APP_BASE_URL).toString();
+    await sendMagicLinkEmail(email, link);
+
+    res.json({ status: 'ok', message: 'Account created — check your email for a login link.' });
+  })
+);
 
 authRouter.post(
   '/magic-link',

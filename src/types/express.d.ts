@@ -9,6 +9,8 @@ declare global {
         organizationId: number;
         role: string;
       };
+      adminUserId?: number;
+      adminRole?: 'super_admin' | 'install_staff';
     }
   }
 }

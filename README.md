@@ -165,36 +165,83 @@ session.
 
 ## Onboarding (spec §9 decision 1, §10 step 7)
 
-`/admin/*` — property onboarding, protected by a shared bearer token
-(`ADMIN_API_KEY`, not a full admin user/role system — reasonable at pilot scale
-with a small install team, revisit before scale-out per §2):
+`/admin/*` — property onboarding:
 
-- `POST /admin/properties` — create one property; returns its id and a
-  ready-to-share Fox consent link (`GET /oauth/fox/authorize?propertyId=...`).
+- `POST /admin/properties` — create one property; returns its id, a
+  ready-to-share Fox consent link (`GET /oauth/fox/authorize?propertyId=...`),
+  and a `signupCode` for the tenant (see "Tenant self-signup" below).
 - `POST /admin/properties/bulk { properties: [...] }` — create many in one call
   ("at scale", §10 step 7) without needing a CSV parser; one bad/duplicate row
   reports an error for that row without aborting the rest of the batch.
 - `GET /admin/properties` — list every property with onboarding status (Fox
   linked? tenant email set? last reading/rollup?) so install staff can see
   what's still outstanding across the pilot's 100-200 properties.
-- `public/admin.html` — a minimal UI over the same API (prompts once for the
-  admin key, stores it in `localStorage`): a form to add a property and a
-  table of onboarding status with each property's Fox consent link.
+- `public/admin.html` — a UI over the same API: a form to add a property and a
+  table of onboarding status, including each property's signup code and Fox
+  consent link.
 
 Per-property install/commissioning order (§4.1, §9 decision 1): (1) confirm or
 create the tenant's Fox Cloud account — the OAuth consent flow depends on it
 existing; (2) install the hardware and note the device serial number; (3) add
-the property via `/admin/properties`; (4) send the tenant the Fox consent link
-to link their device; (5) once you have the tenant's email, set
-`tenant_email` (re-`POST /admin/properties` isn't wired for updates yet — a
-direct `UPDATE properties` is the pilot-scale stopgap) so they can request a
-dashboard magic link. Deliberately not gated on any consent/agreement step
-yet — that's step 9, sequenced after onboarding on purpose (§10).
+the property via `/admin/properties` (tenant email optional now — see
+self-signup below); (4) send the tenant the Fox consent link to link their
+device, and their signup code so they can set up their own dashboard account.
+Deliberately not gated on any consent/agreement step yet — that's step 9,
+sequenced after onboarding on purpose (§10).
 
-Verified end-to-end locally: unauthorized/wrong-key rejection, single create,
-duplicate device-SN/email rejection (409), bulk import with a mix of
-valid/invalid/duplicate rows, and the admin page exercised in a real browser
-(prompt → form submit → table refresh with the new row).
+### Admin accounts (Super Admin / Install Staff)
+
+Two-tier accounts, `admin_users` (migration `006_admin_users.sql`), authenticated
+the same magic-link way as tenants and org users (`/admin-auth/magic-link`,
+`/admin-auth/verify`, `public/admin-login.html`) — no more shared key for
+day-to-day use:
+
+- **Super Admin** — everything Install Staff can do, plus managing the team
+  itself (`GET/POST /admin/team`, `DELETE /admin/team/:id`).
+- **Install Staff** — can onboard properties and organizations, but `/admin/team`
+  is `requireSuperAdmin`-gated and returns 403 for them. `public/admin.html`
+  also just hides the Team members section for them (`GET /admin/me` tells the
+  frontend which role is signed in).
+
+`ADMIN_API_KEY` still exists as a **break-glass/bootstrap credential** — it's
+always treated as `super_admin` on `requireAdmin`-protected routes. Since
+creating an `admin_users` row normally requires already being a super admin,
+this key is how the very first one gets created:
+
+```bash
+curl -X POST https://<host>/admin/team \
+  -H "Authorization: Bearer $ADMIN_API_KEY" -H "Content-Type: application/json" \
+  -d '{"name":"Sarah Ahmed","email":"sarah@uniontechnical.co.uk","role":"super_admin"}'
+```
+
+After that, Sarah signs in normally at `/admin-login.html` and invites everyone
+else from the Team members section. Keep `ADMIN_API_KEY` secret and rotate it
+if it's ever exposed — treat it like a root password, not a daily-use credential.
+
+### Tenant self-signup
+
+Properties get a random `signup_code` (`UT-XXXXX`, migration `007_signup_codes.sql`)
+when created — visually unambiguous characters only (no `0`/`O`, `1`/`I`), since
+install staff hand-write it on the tenant's welcome paperwork. `tenant_email`
+can now be left blank at onboarding time and set by the tenant themselves:
+
+- `POST /auth/signup { code, email }` (`public/signup.html`, linked from the
+  login page) — claims the property matching that code, sets `tenant_email`,
+  and immediately sends a login link (signup and first login are one
+  continuous flow, same as clicking "sign in" afterwards would). Refuses with
+  `already_claimed` if the property already has an email set — the code can't
+  be used to hijack an existing tenant's account, only to claim an unclaimed one.
+- No rate limiting on this endpoint yet — the code space (~33M combinations)
+  resists casual guessing but this needs closing before real go-live (see
+  "Known gaps" below).
+
+Verified end-to-end locally: master-key bootstrap of the first super admin,
+Super Admin inviting an Install Staff member, Install Staff correctly blocked
+(403) from `/admin/team` but able to onboard a property, tenant self-signup
+with that property's code, rejection of both an invalid code and a re-used
+(already-claimed) code, and the resulting tenant landing at the same
+`app_terms` gate any other tenant would — all checked via curl and real-browser
+screenshots of both admin roles' views.
 
 ## HA/LA portfolio view (spec §9a, §10 step 8)
 
@@ -302,8 +349,9 @@ hardware, these need real input that wasn't available while building:
 - **Real UT logo/icon assets** (`public/manifest.json`, header `logo-box`) —
   currently the calculator's own text/colour-mark fallback, not a fabricated
   logo.
-- **Admin auth is a single shared bearer token**, not real UT staff accounts —
-  fine at pilot scale (§2), revisit before scale-out.
+- **No rate limiting on `/auth/signup` or the magic-link endpoints** — the
+  signup code space resists casual guessing but there's no throttling behind
+  it yet; add before real go-live.
 - **Actual deployment** — `render.yaml` is a tested-locally blueprint; nobody
   has provisioned a real Render account/database against it yet.
 

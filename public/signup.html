@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Union Technical | Create Your Account</title>
+<link rel="stylesheet" href="style.css">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#3D4347">
+</head>
+<body>
+<header>
+  <div class="inner">
+    <div class="brand-lockup">
+      <div class="brand-fallback"><span class="mark"></span><span>UT</span></div>
+    </div>
+    <div class="tag">Energy as a Service<br><strong>Tenant Dashboard</strong></div>
+  </div>
+</header>
+
+<div class="hero"><div class="inner"><h1>Set up your savings dashboard</h1></div></div>
+
+<div class="wrap" style="margin-top:40px;">
+  <div class="card login-card">
+    <h2>Create your account</h2>
+    <p class="hint">Enter the installation reference from your welcome letter, and the email you'd like to use to sign in.</p>
+    <form id="signupForm">
+      <div class="field">
+        <label for="code">Installation reference</label>
+        <input type="text" id="code" required placeholder="UT-2K91F">
+        <div class="field-hint">Given to you by your installer when your battery and solar were fitted.</div>
+      </div>
+      <div class="field">
+        <label for="email">Email address</label>
+        <input type="email" id="email" required placeholder="you@example.com">
+      </div>
+      <button type="submit" class="btn">Create account</button>
+    </form>
+    <div id="signupMessage" class="demand-readout" style="display:none;"></div>
+    <p class="hint" style="margin-top:16px;"><a href="/index.html">Already have an account? Sign in</a></p>
+  </div>
+</div>
+
+<script src="signup.js"></script>
+</body>
+</html>

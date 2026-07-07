@@ -66,11 +66,13 @@ header .tag strong { color: var(--yellow); font-weight: bold; }
 
 .field { margin-bottom: 20px; }
 .field label { display: block; font-size: 13px; font-weight: bold; margin-bottom: 7px; color: var(--charcoal); }
-input[type=email] {
+.field .field-hint { font-size: 11.5px; color: var(--charcoal-light); margin-top: 6px; line-height: 1.5; }
+input[type=email], input[type=text], input[type=number], select {
   width: 100%; font-family: Arial, Helvetica, sans-serif; font-size: 15px; font-weight: bold;
   padding: 10px 12px; border: 1.5px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--charcoal);
 }
-input[type=email]:focus { outline: none; border-color: var(--charcoal); background: var(--white); }
+input[type=email]:focus, input[type=text]:focus, input[type=number]:focus, select:focus { outline: none; border-color: var(--charcoal); background: var(--white); }
+code { background: var(--panel); border-radius: 4px; padding: 2px 6px; font-size: 0.95em; }
 
 .btn {
   font-family: Arial, Helvetica, sans-serif; font-size: 14px; font-weight: bold;

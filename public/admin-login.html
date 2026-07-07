@@ -3,10 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Union Technical | Your Savings Dashboard</title>
+<title>Union Technical | Admin Login</title>
 <link rel="stylesheet" href="style.css">
-<link rel="manifest" href="manifest.json">
-<meta name="theme-color" content="#3D4347">
 </head>
 <body>
 <header>
@@ -14,28 +12,28 @@
     <div class="brand-lockup">
       <div class="brand-fallback"><span class="mark"></span><span>UT</span></div>
     </div>
-    <div class="tag">Energy as a Service<br><strong>Tenant Dashboard</strong></div>
+    <div class="tag">Energy as a Service<br><strong>Admin</strong></div>
   </div>
 </header>
 
-<div class="hero"><div class="inner"><h1>Your solar &amp; battery savings</h1></div></div>
+<div class="hero"><div class="inner"><h1>Property &amp; team onboarding</h1></div></div>
 
 <div class="wrap" style="margin-top:40px;">
   <div class="card login-card">
     <h2>Sign in</h2>
-    <p class="hint">Enter the email registered with your Union Technical installation and we'll send you a login link.</p>
+    <p class="hint">Enter your Union Technical staff email and we'll send you a login link.</p>
     <form id="loginForm">
       <div class="field">
         <label for="email">Email address</label>
-        <input type="email" id="email" required placeholder="you@example.com">
+        <input type="email" id="email" required placeholder="you@uniontechnical.co.uk">
       </div>
       <button type="submit" class="btn">Send login link</button>
     </form>
     <div id="loginMessage" class="demand-readout" style="display:none;"></div>
-    <p class="hint" style="margin-top:16px;"><a href="/signup.html">New tenant? Create your account</a></p>
+    <p class="hint" style="margin-top:16px;">No account yet? Ask an existing Super Admin to add you from the Team members section.</p>
   </div>
 </div>
 
-<script src="login.js"></script>
+<script src="admin-login.js"></script>
 </body>
 </html>
