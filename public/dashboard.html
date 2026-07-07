@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Union Technical | Your Savings Dashboard</title>
+<link rel="stylesheet" href="style.css">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#3D4347">
+</head>
+<body>
+<header>
+  <div class="inner">
+    <div class="brand-lockup">
+      <div class="brand-fallback"><span class="mark"></span><span>UT</span></div>
+    </div>
+    <div class="tag">Energy as a Service<br><strong>Tenant Dashboard</strong></div>
+  </div>
+</header>
+
+<div class="hero"><div class="inner"><h1>Your solar &amp; battery savings</h1></div></div>
+
+<div class="pagenav">
+  <div class="pagenav-inner" id="rangeSelector">
+    <button type="button" data-range="day">That day</button>
+    <button type="button" data-range="week">That week</button>
+    <button type="button" data-range="4weeks" class="active">Last 4 weeks</button>
+    <button type="button" data-range="annual">Annual</button>
+  </div>
+</div>
+
+<div class="wrap">
+  <div id="noData" class="card" style="display:none;">
+    <h2>No data yet</h2>
+    <p class="hint">We haven't received any readings for your property yet. Check back after your first full day of monitoring.</p>
+  </div>
+
+  <div id="resultsWrap" style="display:none;">
+    <div class="result-card">
+      <div class="bill-compare">
+        <div class="bill-box">
+          <div class="bill-label">Bill at grid price only</div>
+          <div class="bill-amount" id="currentBill">&pound;0</div>
+          <div class="bill-note">What this period would have cost at full grid price</div>
+        </div>
+        <div class="bill-arrow">&rarr;</div>
+        <div class="bill-box highlight">
+          <div class="bill-label">Your actual bill</div>
+          <div class="bill-amount" id="newBill">&pound;0</div>
+          <div class="bill-note">What you actually paid, given your real solar + battery + grid split</div>
+        </div>
+      </div>
+
+      <div class="result-top">
+        <div class="big" id="totalSaving">&pound;0</div>
+        <div class="sub">saved this period<br>that's <span id="savingPct">0%</span> off the grid-only cost</div>
+      </div>
+
+      <div class="bar" id="bar"></div>
+      <div class="legend">
+        <div class="item"><span class="swatch seg-solar"></span>Solar self-consumed</div>
+        <div class="item"><span class="swatch seg-battery"></span>Battery-covered</div>
+        <div class="item"><span class="swatch seg-grid"></span>Grid-covered</div>
+      </div>
+
+      <div class="breakdown">
+        <div class="cell">
+          <div class="label">Solar saving</div>
+          <div class="amount" id="solarSaving">&pound;0</div>
+          <div class="kwh" id="solarKwh">0 kWh</div>
+        </div>
+        <div class="cell">
+          <div class="label">Battery: off-peak cost</div>
+          <div class="amount" id="batteryImportCost">&pound;0</div>
+          <div class="kwh" id="batteryKwh">0 kWh</div>
+        </div>
+        <div class="cell">
+          <div class="label">Grid cost</div>
+          <div class="amount" id="gridCost">&pound;0</div>
+          <div class="kwh" id="gridKwh">0 kWh</div>
+        </div>
+      </div>
+    </div>
+    <div class="source-note" id="periodNote"></div>
+  </div>
+</div>
+
+<script src="dashboard.js"></script>
+</body>
+</html>

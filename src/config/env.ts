@@ -18,4 +18,5 @@ export const env = {
   FOX_CLIENT_SECRET: required('FOX_CLIENT_SECRET'),
   FOX_REDIRECT_URI: required('FOX_REDIRECT_URI'),
   FOX_SCOPE: process.env.FOX_SCOPE ?? '',
+  APP_BASE_URL: process.env.APP_BASE_URL ?? `http://localhost:${process.env.PORT ?? 3000}`,
 };

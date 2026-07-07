@@ -13,7 +13,7 @@ Build order (spec §10):
 - [x] 2. Fox OAuth flow for one test device
 - [x] 3. Poller for one device
 - [x] 4. Nightly rollup job + cost calculation
-- [ ] 5. Dashboard API + minimal frontend
+- [x] 5. Dashboard API + minimal frontend
 - [ ] 6. Multi-tenant isolation (second/third property)
 - [ ] 7. Onboarding flow at scale
 - [ ] 8. Organizations model + HA/LA portfolio view
@@ -100,6 +100,50 @@ Add a new row with a future `effective_from` each time Ofgem's cap changes; past
 rollups keep using the rate that was live at the time. Upserts on `(property_id,
 date)`, so re-running a date is safe if raw readings get reprocessed. Defaults to
 yesterday (UTC) for the nightly cron; pass a date to backfill/reprocess.
+
+## Tenant auth + dashboard (spec §7, §8, §10 step 5)
+
+Magic link via email — deliberately separate from the Fox OAuth token (§8: a
+tenant logging into their UT dashboard is a different credential from their Fox
+account).
+
+- `POST /auth/magic-link { email }` — if `email` matches a property's
+  `tenant_email`, emails a 15-minute single-use login link. Responds identically
+  whether or not the email matches, so it can't be used to enumerate onboarded
+  tenants.
+- `GET /auth/verify?token=...` — consumes the link, sets an httpOnly session
+  cookie (30 days), redirects to `/dashboard.html`.
+- `GET /api/dashboard?range=day|week|4weeks|annual` — requires the session
+  cookie; returns only the authenticated tenant's own `daily_rollups` data
+  (property-scoped at the query, never trusts a client-supplied property id).
+
+No real email provider is wired up yet (`src/lib/mailer.ts` just logs the link) —
+swap that one function for Postmark/SES/Resend/etc. before onboarding real
+tenants.
+
+The four range options (§7) are trailing windows — 1/7/28/365 days — ending at
+the most recent date with a `daily_rollups` row, not literally "today", since
+the nightly rollup only just computed yesterday by the time a tenant looks.
+Defaults to `4weeks` on first load per spec (a single day's weather is a
+misleading first impression). Per-day cost breakdown (solar saving / battery
+off-peak cost / grid cost, in £) is recomputed from `tariff_rates` at query time
+rather than stored, so it stays correct across a tariff change mid-range.
+
+`public/` is the minimal frontend — plain HTML/CSS/JS (no framework, matching
+§3/§7's "reuse the calculator's HTML/CSS/JS pattern"), served as static files by
+Express. `style.css` is the calculator's palette and card/bill-compare/bar/legend
+components lifted directly from `docs/UT_Phase1_Tenant_Calculator.html` so the
+dashboard reads as its "real data" sibling. `manifest.json` + `sw.js` give it
+basic PWA installability (§9b) — real UT logo assets for the header and home
+screen icon aren't available yet, so it currently reuses the calculator's own
+text/colour-mark fallback rather than a fabricated logo; drop real icons into
+`public/` and reference them in `manifest.json` when available.
+
+Verified end-to-end locally: magic-link request → email-log capture → link
+verify → session cookie → all four ranges returning correctly-aggregated,
+property-isolated data (checked against hand-computed totals from synthetic
+`daily_rollups` rows) → rendered dashboard and login pages screenshotted in a
+real browser → unauthenticated `/api/dashboard` request confirmed to 401.
 
 ## Database
 
