@@ -7,6 +7,8 @@ import { oauthRouter } from './routes/oauth';
 import { authRouter } from './routes/auth';
 import { dashboardRouter } from './routes/dashboard';
 import { adminRouter } from './routes/admin';
+import { orgAuthRouter } from './routes/orgAuth';
+import { portfolioRouter } from './routes/portfolio';
 
 const app = express();
 app.use(express.json());
@@ -26,6 +28,8 @@ app.use('/oauth', oauthRouter);
 app.use('/auth', authRouter);
 app.use('/api', dashboardRouter);
 app.use('/admin', adminRouter);
+app.use('/org-auth', orgAuthRouter);
+app.use('/portfolio', portfolioRouter);
 
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
   console.error(err);

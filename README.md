@@ -16,7 +16,7 @@ Build order (spec §10):
 - [x] 5. Dashboard API + minimal frontend
 - [x] 6. Multi-tenant isolation (second/third property)
 - [x] 7. Onboarding flow at scale
-- [ ] 8. Organizations model + HA/LA portfolio view
+- [x] 8. Organizations model + HA/LA portfolio view
 - [ ] 9. Agreements/consent_records sign-up flow
 
 ## Stack
@@ -192,6 +192,41 @@ Verified end-to-end locally: unauthorized/wrong-key rejection, single create,
 duplicate device-SN/email rejection (409), bulk import with a mix of
 valid/invalid/duplicate rows, and the admin page exercised in a real browser
 (prompt → form submit → table refresh with the new row).
+
+## HA/LA portfolio view (spec §9a, §10 step 8)
+
+`organizations` / `organization_users` / `properties.organization_id` (§9a.2).
+Org users authenticate the same way tenants do — magic link via email — but
+through a separate `/org-auth` + `org_sessions` pair, so an org session token
+can never resolve to a `propertyId` or vice versa (isolation "one level up",
+§9a.3).
+
+- `GET /portfolio/summary` — requires an org session; aggregates *every*
+  property assigned to that org's `organization_id` over the trailing 28 days
+  (§9a.3: aggregate totals include all properties regardless of consent status,
+  since a sum/average doesn't identify an individual tenant). Also returns a
+  per-property list with a `flagged` indicator (no reading in 48h or no rollup
+  in 2 days — a stale property, not a data fault) and `drilldownAvailable`.
+- `public/portfolio-login.html` + `public/portfolio.html` — minimal frontend,
+  same visual system, showing the aggregate bill-compare/bar/legend plus the
+  property list.
+- Admin-side: `POST /admin/organizations`, `POST /admin/organizations/:id/users`,
+  `PATCH /admin/properties/:id/organization` — same shared-admin-key API as
+  onboarding (step 7).
+
+**`drilldownAvailable` is hardcoded `false` for every property right now, on
+purpose.** Per-property usage-data drill-down requires the tenant's live,
+current `ha_data_sharing` consent (§9a.3) — the `consent_records` table it
+must check doesn't exist until step 9, and the build order sequences
+organizations *before* agreements specifically so drill-down can never ship
+without a real consent gate behind it. The drill-down endpoint itself isn't
+built yet either; step 9 adds both the consent check and the endpoint together.
+
+Verified end-to-end locally: two organizations, cross-org isolation (org B's
+session sees zero of org A's three properties), portfolio totals summing only
+properties with rollup data while the property list still includes the one
+with none, and the stale property (5-day-old reading, no rollup ever)
+correctly flagged — checked in a real browser via screenshot.
 
 ## Database
 

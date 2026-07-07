@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Union Technical | Portfolio Login</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <div class="inner">
+    <div class="brand-lockup">
+      <div class="brand-fallback"><span class="mark"></span><span>UT</span></div>
+    </div>
+    <div class="tag">Energy as a Service<br><strong>Partner Portfolio</strong></div>
+  </div>
+</header>
+
+<div class="hero"><div class="inner"><h1>Your property portfolio</h1></div></div>
+
+<div class="wrap" style="margin-top:40px;">
+  <div class="card login-card">
+    <h2>Sign in</h2>
+    <p class="hint">Enter your registered email and we'll send you a login link.</p>
+    <form id="loginForm">
+      <div class="field">
+        <label for="email">Email address</label>
+        <input type="email" id="email" required placeholder="you@example.com">
+      </div>
+      <button type="submit" class="btn">Send login link</button>
+    </form>
+    <div id="loginMessage" class="demand-readout" style="display:none;"></div>
+  </div>
+</div>
+
+<script src="portfolio-login.js"></script>
+</body>
+</html>

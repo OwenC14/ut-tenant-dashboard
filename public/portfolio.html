@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Union Technical | Portfolio</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <div class="inner">
+    <div class="brand-lockup">
+      <div class="brand-fallback"><span class="mark"></span><span>UT</span></div>
+    </div>
+    <div class="tag">Energy as a Service<br><strong id="orgName">Partner Portfolio</strong></div>
+  </div>
+</header>
+
+<div class="hero"><div class="inner"><h1>Portfolio savings overview</h1></div></div>
+
+<div class="wrap" style="margin-top:40px;">
+
+  <div class="result-card" style="margin-bottom:24px;">
+    <div class="bill-compare">
+      <div class="bill-box">
+        <div class="bill-label">Properties in portfolio</div>
+        <div class="bill-amount" id="propertyCount">0</div>
+        <div class="bill-note">Total properties assigned to this organization</div>
+      </div>
+      <div class="bill-box">
+        <div class="bill-label">Bill at grid price only</div>
+        <div class="bill-amount" id="currentBill">£0</div>
+        <div class="bill-note" id="periodNote">Last 28 days across the portfolio</div>
+      </div>
+      <div class="bill-box highlight">
+        <div class="bill-label">Actual bill (solar + battery + grid)</div>
+        <div class="bill-amount" id="newBill">£0</div>
+        <div class="bill-note">Aggregate — no individual tenant is identified at this level</div>
+      </div>
+    </div>
+
+    <div class="result-top">
+      <div class="big" id="totalSaving">£0</div>
+      <div class="sub">saved across the portfolio this period<br>average <span id="avgSaving">£0</span> per property</div>
+    </div>
+
+    <div class="bar" id="bar"></div>
+    <div class="legend">
+      <div class="item"><span class="swatch seg-solar"></span>Solar self-consumed</div>
+      <div class="item"><span class="swatch seg-battery"></span>Battery-covered</div>
+      <div class="item"><span class="swatch seg-grid"></span>Grid-covered</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Properties</h2>
+    <p class="hint" style="margin-bottom:16px;">
+      Drill-down into an individual property's usage data requires that tenant's explicit,
+      current data-sharing consent. A property showing "not shared" means the tenant hasn't
+      consented to individual-level sharing — not a data fault.
+    </p>
+    <div style="overflow-x:auto;">
+      <table class="admin-table">
+        <thead>
+          <tr><th>Address</th><th>Tenant</th><th>Status</th><th>Drill-down</th></tr>
+        </thead>
+        <tbody id="propertiesBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script src="portfolio.js"></script>
+</body>
+</html>
