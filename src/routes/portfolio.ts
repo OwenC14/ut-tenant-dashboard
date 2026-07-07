@@ -3,15 +3,10 @@ import { pool } from '../db/pool';
 import { requireOrgSession } from '../auth/requireOrgSession';
 import { asyncHandler } from '../lib/asyncHandler';
 import { getCurrentAgreement, getCurrentConsentStatus } from '../consent/agreements';
-import { getPropertyAggregate } from '../dashboard/aggregate';
-
-const DRILLDOWN_WINDOW_DAYS = 28;
+import { getAggregateForRange, getHourlyAggregate, RANGE_DAYS, DASHBOARD_RANGES, DashboardRange } from '../dashboard/aggregate';
+import { computePropertyStatus } from '../dashboard/propertyStatus';
 
 export const portfolioRouter = Router();
-
-const PORTFOLIO_WINDOW_DAYS = 28;
-const STALE_READING_HOURS = 48;
-const STALE_ROLLUP_DAYS = 2;
 
 interface PortfolioRollupRow {
   property_id: number;
@@ -26,7 +21,11 @@ interface PortfolioRollupRow {
 interface PropertyRow {
   id: number;
   address: string;
+  postcode: string | null;
   tenant_name: string;
+  connection_date: string | null;
+  has_fox_token: boolean;
+  has_tenant_email: boolean;
   last_reading_at: string | null;
   last_rollup_date: string | null;
 }
@@ -44,7 +43,9 @@ portfolioRouter.get(
     }
 
     const { rows: propertyRows } = await pool.query<PropertyRow>(
-      `SELECT p.id, p.address, p.tenant_name,
+      `SELECT p.id, p.address, p.postcode, p.tenant_name, p.connection_date,
+              p.fox_access_token IS NOT NULL AS has_fox_token,
+              p.tenant_email IS NOT NULL AS has_tenant_email,
               (SELECT MAX(reading_time) FROM meter_readings WHERE property_id = p.id) AS last_reading_at,
               (SELECT MAX(date) FROM daily_rollups WHERE property_id = p.id) AS last_rollup_date
        FROM properties p
@@ -53,77 +54,105 @@ portfolioRouter.get(
       [organizationId]
     );
 
-    const { rows: latestRows } = await pool.query(
-      `SELECT MAX(dr.date) AS latest
-       FROM daily_rollups dr
-       JOIN properties p ON p.id = dr.property_id
-       WHERE p.organization_id = $1`,
-      [organizationId]
-    );
-    const latest = latestRows[0]?.latest;
+    const range = String(req.query.range ?? 'month');
+    if (!DASHBOARD_RANGES.includes(range as DashboardRange)) {
+      res.status(400).json({ error: `range must be one of: ${DASHBOARD_RANGES.join(', ')}` });
+      return;
+    }
 
     let totals = { solarKwh: 0, batteryKwh: 0, gridKwh: 0, currentBill: 0, newBill: 0, saving: 0, propertiesWithData: 0 };
     let period: { start: string | null; end: string | null; days: number } = { start: null, end: null, days: 0 };
     let series: { date: string; without: number; with: number }[] = [];
 
-    if (latest) {
-      // Ungrouped (not SUM'd in SQL) so we can derive both the aggregate
-      // totals AND a per-day series — and the distinct property count — from
-      // one query instead of two.
-      const { rows: rollupRows } = await pool.query<PortfolioRollupRow>(
-        `SELECT dr.property_id, dr.date, dr.solar_self_consumed_kwh, dr.battery_covered_kwh, dr.grid_covered_kwh,
-                dr.estimated_cost_current_bill, dr.estimated_cost_new_bill
+    if (range === '24h') {
+      // Every property in the org, hour by hour — same cumulative-reading
+      // diff logic as a single tenant's 24-hour view (src/dashboard/aggregate.ts),
+      // just summed across the whole portfolio instead of one property.
+      const agg = await getHourlyAggregate(propertyRows.map((p) => p.id), 24);
+      if (agg.hasData) {
+        totals = {
+          solarKwh: agg.solar?.kwh ?? 0,
+          batteryKwh: agg.battery?.kwh ?? 0,
+          gridKwh: agg.grid?.kwh ?? 0,
+          currentBill: agg.currentBill ?? 0,
+          newBill: agg.newBill ?? 0,
+          saving: agg.saving ?? 0,
+          propertiesWithData: agg.propertiesWithData ?? 0,
+        };
+        period = { start: agg.periodStart ?? null, end: agg.periodEnd ?? null, days: agg.series?.length ?? 0 };
+        series = agg.series ?? [];
+      }
+    } else {
+      const windowDays = RANGE_DAYS[range as Exclude<DashboardRange, '24h'>];
+
+      const { rows: latestRows } = await pool.query(
+        `SELECT MAX(dr.date) AS latest
          FROM daily_rollups dr
          JOIN properties p ON p.id = dr.property_id
-         WHERE p.organization_id = $1
-           AND dr.date > $2::date - ('${PORTFOLIO_WINDOW_DAYS}' || ' days')::interval
-           AND dr.date <= $2::date
-         ORDER BY dr.date`,
-        [organizationId, latest]
+         WHERE p.organization_id = $1`,
+        [organizationId]
       );
+      const latest = latestRows[0]?.latest;
 
-      const byDate = new Map<string, { without: number; with: number }>();
-      const propertiesWithData = new Set<number>();
-      let solarKwh = 0;
-      let batteryKwh = 0;
-      let gridKwh = 0;
-      let currentBill = 0;
-      let newBill = 0;
+      if (latest) {
+        // Ungrouped (not SUM'd in SQL) so we can derive both the aggregate
+        // totals AND a per-day series — and the distinct property count — from
+        // one query instead of two.
+        const { rows: rollupRows } = await pool.query<PortfolioRollupRow>(
+          `SELECT dr.property_id, dr.date, dr.solar_self_consumed_kwh, dr.battery_covered_kwh, dr.grid_covered_kwh,
+                  dr.estimated_cost_current_bill, dr.estimated_cost_new_bill
+           FROM daily_rollups dr
+           JOIN properties p ON p.id = dr.property_id
+           WHERE p.organization_id = $1
+             AND dr.date > $2::date - ($3::text || ' days')::interval
+             AND dr.date <= $2::date
+           ORDER BY dr.date`,
+          [organizationId, latest, windowDays]
+        );
 
-      for (const r of rollupRows) {
-        propertiesWithData.add(r.property_id);
-        solarKwh += Number(r.solar_self_consumed_kwh);
-        batteryKwh += Number(r.battery_covered_kwh);
-        gridKwh += Number(r.grid_covered_kwh);
-        const dayWithout = Number(r.estimated_cost_current_bill);
-        const dayWith = Number(r.estimated_cost_new_bill);
-        currentBill += dayWithout;
-        newBill += dayWith;
+        const byDate = new Map<string, { without: number; with: number }>();
+        const propertiesWithData = new Set<number>();
+        let solarKwh = 0;
+        let batteryKwh = 0;
+        let gridKwh = 0;
+        let currentBill = 0;
+        let newBill = 0;
 
-        // pg returns `date` columns as JS Date objects — keying a Map by one
-        // directly would key on object identity, not calendar-date equality,
-        // so two properties' rows for the same date would never merge.
-        const dateKey = new Date(r.date).toISOString().slice(0, 10);
-        const bucket = byDate.get(dateKey) ?? { without: 0, with: 0 };
-        bucket.without += dayWithout;
-        bucket.with += dayWith;
-        byDate.set(dateKey, bucket);
+        for (const r of rollupRows) {
+          propertiesWithData.add(r.property_id);
+          solarKwh += Number(r.solar_self_consumed_kwh);
+          batteryKwh += Number(r.battery_covered_kwh);
+          gridKwh += Number(r.grid_covered_kwh);
+          const dayWithout = Number(r.estimated_cost_current_bill);
+          const dayWith = Number(r.estimated_cost_new_bill);
+          currentBill += dayWithout;
+          newBill += dayWith;
+
+          // pg returns `date` columns as JS Date objects — keying a Map by one
+          // directly would key on object identity, not calendar-date equality,
+          // so two properties' rows for the same date would never merge.
+          const dateKey = new Date(r.date).toISOString().slice(0, 10);
+          const bucket = byDate.get(dateKey) ?? { without: 0, with: 0 };
+          bucket.without += dayWithout;
+          bucket.with += dayWith;
+          byDate.set(dateKey, bucket);
+        }
+
+        series = Array.from(byDate.entries())
+          .sort(([a], [b]) => (a < b ? -1 : 1))
+          .map(([date, v]) => ({ date, without: v.without, with: v.with }));
+
+        totals = {
+          solarKwh,
+          batteryKwh,
+          gridKwh,
+          currentBill,
+          newBill,
+          saving: currentBill - newBill,
+          propertiesWithData: propertiesWithData.size,
+        };
+        period = { start: series[0]?.date ?? null, end: latest, days: series.length };
       }
-
-      series = Array.from(byDate.entries())
-        .sort(([a], [b]) => (a < b ? -1 : 1))
-        .map(([date, v]) => ({ date, without: v.without, with: v.with }));
-
-      totals = {
-        solarKwh,
-        batteryKwh,
-        gridKwh,
-        currentBill,
-        newBill,
-        saving: currentBill - newBill,
-        propertiesWithData: propertiesWithData.size,
-      };
-      period = { start: series[0]?.date ?? null, end: latest, days: series.length };
     }
 
     // Live check (spec §9a.3/§9a.4 point 5: query the current status, never
@@ -142,19 +171,25 @@ portfolioRouter.get(
       sharedPropertyIds = new Set(consentRows.filter((r) => r.status === 'accepted').map((r) => r.property_id));
     }
 
-    const now = Date.now();
     const properties = propertyRows.map((p) => {
-      const lastReadingAgeHours = p.last_reading_at ? (now - new Date(p.last_reading_at).getTime()) / (1000 * 60 * 60) : Infinity;
-      const lastRollupAgeDays = p.last_rollup_date ? (now - new Date(p.last_rollup_date).getTime()) / (1000 * 60 * 60 * 24) : Infinity;
-      const flagged = lastReadingAgeHours > STALE_READING_HOURS || lastRollupAgeDays > STALE_ROLLUP_DAYS;
+      const { status, requiredActions } = computePropertyStatus({
+        hasFoxToken: p.has_fox_token,
+        hasTenantEmail: p.has_tenant_email,
+        lastReadingAt: p.last_reading_at,
+        lastRollupDate: p.last_rollup_date,
+      });
 
       return {
         id: p.id,
         address: p.address,
+        postcode: p.postcode,
         tenantName: p.tenant_name,
+        connectionDate: p.connection_date,
         lastReadingAt: p.last_reading_at,
         lastRollupDate: p.last_rollup_date,
-        flagged,
+        status,
+        requiredActions,
+        flagged: status !== 'ok', // kept for any older client still reading this field
         drilldownAvailable: sharedPropertyIds.has(p.id),
       };
     });
@@ -162,6 +197,8 @@ portfolioRouter.get(
     res.json({
       organization: orgRows[0],
       propertyCount: propertyRows.length,
+      range,
+      granularity: range === '24h' ? 'hour' : 'day',
       period,
       totals: {
         ...totals,
@@ -188,6 +225,11 @@ portfolioRouter.get(
       res.status(400).json({ error: 'invalid property id' });
       return;
     }
+    const range = String(req.query.range ?? 'month');
+    if (!DASHBOARD_RANGES.includes(range as DashboardRange)) {
+      res.status(400).json({ error: `range must be one of: ${DASHBOARD_RANGES.join(', ')}` });
+      return;
+    }
 
     const { rows } = await pool.query(
       'SELECT id, address, tenant_name FROM properties WHERE id = $1 AND organization_id = $2',
@@ -207,7 +249,7 @@ portfolioRouter.get(
       return;
     }
 
-    const aggregate = await getPropertyAggregate(propertyId, DRILLDOWN_WINDOW_DAYS);
-    res.json({ property: rows[0], ...aggregate });
+    const aggregate = await getAggregateForRange(propertyId, range as DashboardRange);
+    res.json({ property: rows[0], range, granularity: range === '24h' ? 'hour' : 'day', ...aggregate });
   })
 );

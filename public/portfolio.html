@@ -7,6 +7,16 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+
+<div id="requiredActionsModal" class="modal-overlay" style="display:none;">
+  <div class="modal-box">
+    <h2>Action needed<span id="requiredActionsAddress"></span></h2>
+    <p class="hint" id="requiredActionsStatusLabel" style="margin-bottom:14px;"></p>
+    <ul id="requiredActionsList" style="font-size:13px; line-height:1.7; padding-left:20px; margin:0 0 18px;"></ul>
+    <button type="button" class="btn" id="requiredActionsClose">Close</button>
+  </div>
+</div>
+
 <header>
   <div class="inner">
     <div class="brand-lockup">
@@ -18,7 +28,16 @@
 
 <div class="hero"><div class="inner"><h1>Portfolio savings overview</h1></div></div>
 
-<div class="wrap" style="margin-top:40px;">
+<div class="pagenav">
+  <div class="pagenav-inner" id="rangeSelector">
+    <button type="button" data-range="24h">24 hour</button>
+    <button type="button" data-range="week">Week</button>
+    <button type="button" data-range="month" class="active">Month</button>
+    <button type="button" data-range="year">Year</button>
+  </div>
+</div>
+
+<div class="wrap">
 
   <div class="result-card" style="margin-bottom:24px;">
     <div class="bill-compare">
@@ -54,7 +73,7 @@
 
   <div class="card" style="margin-bottom:24px;">
     <h2>Portfolio bill with and without Phase 1</h2>
-    <p class="hint" style="margin-bottom:14px;">Every property in this portfolio, summed day by day — what they'd have paid at grid price only, versus what solar and battery actually brought it down to.</p>
+    <p class="hint" style="margin-bottom:14px;" id="portfolioChartHint">Every property in this portfolio, summed day by day — what they'd have paid at grid price only, versus what solar and battery actually brought it down to.</p>
     <div id="portfolioChart"></div>
   </div>
 
@@ -69,12 +88,32 @@
     <p class="hint" style="margin-bottom:16px;">
       Drill-down into an individual property's usage data requires that tenant's explicit,
       current data-sharing consent. A property showing "not shared" means the tenant hasn't
-      consented to individual-level sharing — not a data fault.
+      consented to individual-level sharing — not a data fault. Properties needing attention
+      show a status pill you can click for what to do next.
     </p>
+    <div class="filter-bar">
+      <label for="statusFilter">Status</label>
+      <select id="statusFilter">
+        <option value="">All statuses</option>
+        <option value="not_connected">Not connected</option>
+        <option value="no_tenant">No tenant account</option>
+        <option value="awaiting_data">Awaiting first data</option>
+        <option value="disconnected">Disconnected</option>
+        <option value="ok">OK</option>
+      </select>
+      <span class="hint" id="propertiesShownCount"></span>
+    </div>
     <div style="overflow-x:auto;">
       <table class="admin-table">
         <thead>
-          <tr><th>Address</th><th>Tenant</th><th>Status</th><th>Drill-down</th></tr>
+          <tr>
+            <th class="sortable" data-sort="address">Address<span class="arrow">↕</span></th>
+            <th class="sortable" data-sort="postcode">Postcode<span class="arrow">↕</span></th>
+            <th class="sortable" data-sort="tenantName">Tenant<span class="arrow">↕</span></th>
+            <th class="sortable" data-sort="connectionDate">Connection date<span class="arrow">↕</span></th>
+            <th class="sortable" data-sort="status">Status<span class="arrow">↕</span></th>
+            <th>Drill-down</th>
+          </tr>
         </thead>
         <tbody id="propertiesBody"></tbody>
       </table>

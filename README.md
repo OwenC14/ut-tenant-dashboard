@@ -116,21 +116,24 @@ account).
   tenants.
 - `GET /auth/verify?token=...` — consumes the link, sets an httpOnly session
   cookie (30 days), redirects to `/dashboard.html`.
-- `GET /api/dashboard?range=day|week|4weeks|annual` — requires the session
-  cookie; returns only the authenticated tenant's own `daily_rollups` data
+- `GET /api/dashboard?range=24h|week|month|year` — requires the session
+  cookie; returns only the authenticated tenant's own usage data
   (property-scoped at the query, never trusts a client-supplied property id).
 
 No real email provider is wired up yet (`src/lib/mailer.ts` just logs the link) —
 swap that one function for Postmark/SES/Resend/etc. before onboarding real
 tenants.
 
-The four range options (§7) are trailing windows — 1/7/28/365 days — ending at
-the most recent date with a `daily_rollups` row, not literally "today", since
-the nightly rollup only just computed yesterday by the time a tenant looks.
-Defaults to `4weeks` on first load per spec (a single day's weather is a
-misleading first impression). Per-day cost breakdown (solar saving / battery
-off-peak cost / grid cost, in £) is recomputed from `tariff_rates` at query time
-rather than stored, so it stays correct across a tariff change mid-range.
+The four range options (§7) are trailing windows ending at the most recent
+data point for the property, not literally "today"/"this hour" — `week`
+(7 days), `month` (28 days) and `year` (365 days) are `daily_rollups`
+aggregations; `24h` is genuinely hourly, built from raw `meter_readings` (see
+"Property health status, filters & sorting, time ranges" below for how the
+hourly bucketing works). Defaults to `month` on first load per spec (a single
+day's weather is a misleading first impression). Per-day/per-hour cost
+breakdown (solar saving / battery off-peak cost / grid cost, in £) is
+recomputed from `tariff_rates` at query time rather than stored, so it stays
+correct across a tariff change mid-range.
 
 `public/` is the minimal frontend — plain HTML/CSS/JS (no framework, matching
 §3/§7's "reuse the calculator's HTML/CSS/JS pattern"), served as static files by
@@ -251,12 +254,13 @@ through a separate `/org-auth` + `org_sessions` pair, so an org session token
 can never resolve to a `propertyId` or vice versa (isolation "one level up",
 §9a.3).
 
-- `GET /portfolio/summary` — requires an org session; aggregates *every*
-  property assigned to that org's `organization_id` over the trailing 28 days
-  (§9a.3: aggregate totals include all properties regardless of consent status,
-  since a sum/average doesn't identify an individual tenant). Also returns a
-  per-property list with a `flagged` indicator (no reading in 48h or no rollup
-  in 2 days — a stale property, not a data fault) and `drilldownAvailable`.
+- `GET /portfolio/summary?range=24h|week|month|year` — requires an org session;
+  aggregates *every* property assigned to that org's `organization_id` over
+  the selected trailing window (§9a.3: aggregate totals include all
+  properties regardless of consent status, since a sum/average doesn't
+  identify an individual tenant). Also returns a per-property list with a
+  `status` + `requiredActions` (see "Property health status" below) and
+  `drilldownAvailable`.
 - `public/portfolio-login.html` + `public/portfolio.html` — minimal frontend,
   same visual system, showing the aggregate bill-compare/bar/legend plus the
   property list.
@@ -380,6 +384,61 @@ in a real browser, the portfolio aggregate correctly sums per-day across
 properties (28 distinct days, not double-counted), and cross-org isolation
 holds for the new series data exactly as it does for everything else in
 `/portfolio/*`.
+
+## Property health status, filters & sorting, time ranges
+
+Deepened the HA/LA portfolio view and tenant dashboard beyond what step 8/the
+comparison graph shipped:
+
+**Property status** (`src/dashboard/propertyStatus.ts`) replaces the old
+boolean `flagged` with a real status an HA/admin can act on:
+`not_connected` (no Fox token yet) → `no_tenant` (linked but no tenant email
+set) → `awaiting_data` (linked + tenant, no reading yet) → `disconnected` (no
+reading in 48h, or no rollup in 2 days) → `ok`. `GET /portfolio/summary` now
+returns `status` + `requiredActions` (a plain-English next step) per property;
+`flagged` is still present (`status !== 'ok'`) for any older client reading it.
+`public/portfolio.html`/`.js` render this as a coloured status pill — clicking
+a non-OK pill opens a modal with the required action(s), so an HA user doesn't
+have to guess what "disconnected" means or who should do what about it.
+
+**Postcode + connection date** (`migrations/008_property_details.sql`) —
+`postcode` is set at onboarding (`POST /admin/properties`); `connection_date`
+is set once, automatically, the first time a property completes Fox OAuth
+(`src/routes/oauth.ts`'s callback, `COALESCE`d so a later token refresh never
+overwrites it). Both now appear in the portfolio property table, alongside a
+status filter dropdown and click-to-sort column headers (ascending/descending,
+toggled by clicking the same header again) — all client-side over the
+properties array already returned by `/portfolio/summary`, no new endpoint.
+
+**Time ranges — 24 hour / Week / Month / Year** replace the old
+`day`/`week`/`4weeks`/`annual` options on both the tenant dashboard
+(`GET /api/dashboard?range=...`) and the HA portfolio (`GET
+/portfolio/summary?range=...`, `GET /portfolio/properties/:id?range=...`).
+Week/Month/Year are the same trailing-window `daily_rollups` aggregation as
+before (7/28/365 days), just renamed. 24 Hour is new and genuinely different:
+`daily_rollups` only has daily granularity, so `src/dashboard/aggregate.ts`'s
+new `getHourlyAggregate()` reads raw `meter_readings` instead — these are
+cumulative-for-the-day snapshots (§4.2, reset to zero at midnight), so it
+diffs consecutive readings to get each 15-minute increment, treating the first
+reading of a new calendar day as its own increment rather than diffing it
+against the previous day's last reading (which would double-count). Increments
+are bucketed by hour and priced with that day's `tariff_rates`; standing
+charge is deliberately left out of the hourly figures since attributing 1/24
+of a fixed daily charge to an arbitrary hour would be misleading. The same
+function takes an array of property IDs, so one implementation serves both a
+single tenant's 24-hour view and the whole portfolio's, summed.
+
+`public/chart.js` takes a new `granularity: 'hour'|'day'` option so the x-axis
+and tooltip show a time (`14:00`) instead of a date for the 24-hour view.
+
+Verified end-to-end locally: seeded five synthetic property states (one per
+status value) and confirmed each computed correctly end-to-end through the
+API and the rendered pill/modal; seeded 15-minute `meter_readings` spanning a
+midnight boundary and confirmed the 24-hour view's hourly buckets carry no
+discontinuity at the day rollover, on the tenant dashboard, the portfolio
+aggregate, and the per-property drill-down; confirmed switching ranges while a
+drill-down is open re-fetches it at the new range (not stale data left over
+from the previous range).
 
 ## Known gaps before real go-live
 

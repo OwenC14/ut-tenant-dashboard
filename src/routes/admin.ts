@@ -16,6 +16,7 @@ adminRouter.get('/me', (req, res) => {
 
 interface PropertyInput {
   address?: string;
+  postcode?: string;
   tenantName?: string;
   foxDeviceSn?: string;
   tenantEmail?: string;
@@ -49,11 +50,12 @@ async function createProperty(input: PropertyInput) {
     try {
       const { rows } = await pool.query(
         `INSERT INTO properties
-           (address, tenant_name, fox_device_sn, tenant_email, array_size_kwp, battery_capacity_kwh, install_date, ha_or_la_partner, signup_code, organization_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+           (address, postcode, tenant_name, fox_device_sn, tenant_email, array_size_kwp, battery_capacity_kwh, install_date, ha_or_la_partner, signup_code, organization_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
          RETURNING id`,
         [
           input.address,
+          input.postcode ?? null,
           input.tenantName,
           input.foxDeviceSn,
           input.tenantEmail ?? null,
@@ -145,7 +147,8 @@ adminRouter.get(
   asyncHandler(async (_req, res) => {
     const { rows } = await pool.query(`
       SELECT
-        p.id, p.address, p.tenant_name, p.fox_device_sn, p.tenant_email, p.organization_id, p.signup_code,
+        p.id, p.address, p.postcode, p.tenant_name, p.fox_device_sn, p.tenant_email, p.organization_id, p.signup_code,
+        p.connection_date,
         o.name AS organization_name,
         p.fox_access_token IS NOT NULL AS has_fox_token,
         (SELECT MAX(reading_time) FROM meter_readings WHERE property_id = p.id) AS last_reading_at,

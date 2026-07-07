@@ -35,12 +35,25 @@ async function loadRange(range) {
     bar.appendChild(d);
   });
 
-  document.getElementById('periodNote').textContent =
-    `${data.periodStart} to ${data.periodEnd} (${data.days} day${data.days === 1 ? '' : 's'} of data)`;
+  document.getElementById('periodNote').textContent = data.granularity === 'hour'
+    ? `${fmtHourLabel(data.periodStart)} to ${fmtHourLabel(data.periodEnd)} (${data.days} hour${data.days === 1 ? '' : 's'} of data)`
+    : `${fmtDayLabel(data.periodStart)} to ${fmtDayLabel(data.periodEnd)} (${data.days} day${data.days === 1 ? '' : 's'} of data)`;
+
+  document.getElementById('comparisonChartHint').textContent =
+    `What you'd have paid at grid price only, versus what solar and battery actually brought it down to, ${data.granularity === 'hour' ? 'hour by hour' : 'day by day'}.`;
 
   renderComparisonChart(document.getElementById('comparisonChart'), data.series, {
-    ariaLabel: 'Your bill with and without Phase 1, day by day',
+    ariaLabel: `Your bill with and without Phase 1, ${data.granularity === 'hour' ? 'hour by hour' : 'day by day'}`,
+    granularity: data.granularity,
   });
+}
+
+function fmtHourLabel(iso) {
+  return iso ? new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
+}
+
+function fmtDayLabel(d) {
+  return d ? new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
 }
 
 let rangeSelectorInitialized = false;
@@ -55,9 +68,9 @@ function initRangeSelector() {
       loadRange(btn.dataset.range);
     });
   });
-  // Default view per spec §7: last 4 weeks, not "that day" — a single day's
+  // Default view per spec §7: a month, not "24 hour" — a single day's
   // weather can be misleading on a tenant's first login.
-  loadRange('4weeks');
+  loadRange('month');
 }
 
 async function postConsent(type, status) {

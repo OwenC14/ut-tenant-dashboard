@@ -49,11 +49,16 @@ oauthRouter.get(
 
     const tokens = await exchangeCodeForTokens(code);
 
+    // connection_date is set once, the first time linking succeeds -- a
+    // refresh (step §4.1 point 5) re-runs this callback path's cousin in
+    // refresh-tokens.ts, not this one, so COALESCE here is defence in depth
+    // rather than the primary guard against overwriting it.
     await pool.query(
       `UPDATE properties
        SET fox_access_token = $1,
            fox_refresh_token = $2,
-           fox_token_expires_at = $3
+           fox_token_expires_at = $3,
+           connection_date = COALESCE(connection_date, CURRENT_DATE)
        WHERE id = $4`,
       [encrypt(tokens.accessToken), encrypt(tokens.refreshToken), tokens.expiresAt, propertyId]
     );

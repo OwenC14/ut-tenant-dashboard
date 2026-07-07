@@ -38,6 +38,11 @@ function fmtDate(iso) {
   return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 }
 
+function fmtHour(iso) {
+  const d = new Date(iso);
+  return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+}
+
 // series: [{date, without, with}], both non-negative, with <= without.
 function renderComparisonChart(container, series, opts) {
   opts = opts || {};
@@ -49,6 +54,8 @@ function renderComparisonChart(container, series, opts) {
     container.appendChild(empty);
     return;
   }
+
+  const fmtX = opts.granularity === 'hour' ? fmtHour : fmtDate;
 
   const W = 720, H = 260;
   const margin = { top: 16, right: 16, bottom: 28, left: 44 };
@@ -107,7 +114,7 @@ function renderComparisonChart(container, series, opts) {
       x: x(i), y: H - 8, 'text-anchor': i === 0 ? 'start' : 'end',
       'font-size': '11', fill: '#a9adaf', 'font-family': 'Arial, Helvetica, sans-serif',
     });
-    label.textContent = fmtDate(series[i].date);
+    label.textContent = fmtX(series[i].date);
     xLabels.appendChild(label);
   });
   svg.appendChild(xLabels);
@@ -133,7 +140,7 @@ function renderComparisonChart(container, series, opts) {
     crosshair.setAttribute('visibility', 'visible');
     const unitFmt = opts.unit === 'kwh' ? (n) => Math.round(n).toLocaleString('en-GB') + ' kWh' : fmtCurrency;
     tooltip.innerHTML =
-      `<strong>${fmtDate(d.date)}</strong><br>` +
+      `<strong>${fmtX(d.date)}</strong><br>` +
       `<span style="color:${CHART_COLORS.withPhase1}">●</span> ${opts.withLabel || 'With Phase 1'}: ${unitFmt(d.with)}<br>` +
       `<span style="color:${CHART_COLORS.withoutPhase1}">●</span> ${opts.withoutLabel || 'Without Phase 1'}: ${unitFmt(d.without)}`;
     tooltip.style.display = 'block';

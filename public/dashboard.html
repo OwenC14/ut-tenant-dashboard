@@ -32,10 +32,10 @@
 
 <div class="pagenav">
   <div class="pagenav-inner" id="rangeSelector">
-    <button type="button" data-range="day">That day</button>
-    <button type="button" data-range="week">That week</button>
-    <button type="button" data-range="4weeks" class="active">Last 4 weeks</button>
-    <button type="button" data-range="annual">Annual</button>
+    <button type="button" data-range="24h">24 hour</button>
+    <button type="button" data-range="week">Week</button>
+    <button type="button" data-range="month" class="active">Month</button>
+    <button type="button" data-range="year">Year</button>
   </div>
 </div>
 
@@ -106,7 +106,7 @@
 
     <div class="card" style="margin-top:24px;">
       <h2>Bill with and without Phase 1</h2>
-      <p class="hint" style="margin-bottom:14px;">What you'd have paid at grid price only, versus what solar and battery actually brought it down to, day by day.</p>
+      <p class="hint" style="margin-bottom:14px;" id="comparisonChartHint">What you'd have paid at grid price only, versus what solar and battery actually brought it down to, day by day.</p>
       <div id="comparisonChart"></div>
     </div>
   </div>
