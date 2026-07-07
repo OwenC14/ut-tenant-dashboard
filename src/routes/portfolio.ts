@@ -13,13 +13,14 @@ const PORTFOLIO_WINDOW_DAYS = 28;
 const STALE_READING_HOURS = 48;
 const STALE_ROLLUP_DAYS = 2;
 
-interface PortfolioTotalsRow {
-  solar_kwh: string | null;
-  battery_kwh: string | null;
-  grid_kwh: string | null;
-  current_bill: string | null;
-  new_bill: string | null;
-  properties_with_data: string;
+interface PortfolioRollupRow {
+  property_id: number;
+  date: string;
+  solar_self_consumed_kwh: string;
+  battery_covered_kwh: string;
+  grid_covered_kwh: string;
+  estimated_cost_current_bill: string;
+  estimated_cost_new_bill: string;
 }
 
 interface PropertyRow {
@@ -63,36 +64,66 @@ portfolioRouter.get(
 
     let totals = { solarKwh: 0, batteryKwh: 0, gridKwh: 0, currentBill: 0, newBill: 0, saving: 0, propertiesWithData: 0 };
     let period: { start: string | null; end: string | null; days: number } = { start: null, end: null, days: 0 };
+    let series: { date: string; without: number; with: number }[] = [];
 
     if (latest) {
-      const { rows: totalsRows } = await pool.query<PortfolioTotalsRow>(
-        `SELECT
-           SUM(dr.solar_self_consumed_kwh) AS solar_kwh,
-           SUM(dr.battery_covered_kwh) AS battery_kwh,
-           SUM(dr.grid_covered_kwh) AS grid_kwh,
-           SUM(dr.estimated_cost_current_bill) AS current_bill,
-           SUM(dr.estimated_cost_new_bill) AS new_bill,
-           COUNT(DISTINCT dr.property_id) AS properties_with_data
+      // Ungrouped (not SUM'd in SQL) so we can derive both the aggregate
+      // totals AND a per-day series — and the distinct property count — from
+      // one query instead of two.
+      const { rows: rollupRows } = await pool.query<PortfolioRollupRow>(
+        `SELECT dr.property_id, dr.date, dr.solar_self_consumed_kwh, dr.battery_covered_kwh, dr.grid_covered_kwh,
+                dr.estimated_cost_current_bill, dr.estimated_cost_new_bill
          FROM daily_rollups dr
          JOIN properties p ON p.id = dr.property_id
          WHERE p.organization_id = $1
            AND dr.date > $2::date - ('${PORTFOLIO_WINDOW_DAYS}' || ' days')::interval
-           AND dr.date <= $2::date`,
+           AND dr.date <= $2::date
+         ORDER BY dr.date`,
         [organizationId, latest]
       );
-      const t = totalsRows[0];
-      const currentBill = Number(t.current_bill ?? 0);
-      const newBill = Number(t.new_bill ?? 0);
+
+      const byDate = new Map<string, { without: number; with: number }>();
+      const propertiesWithData = new Set<number>();
+      let solarKwh = 0;
+      let batteryKwh = 0;
+      let gridKwh = 0;
+      let currentBill = 0;
+      let newBill = 0;
+
+      for (const r of rollupRows) {
+        propertiesWithData.add(r.property_id);
+        solarKwh += Number(r.solar_self_consumed_kwh);
+        batteryKwh += Number(r.battery_covered_kwh);
+        gridKwh += Number(r.grid_covered_kwh);
+        const dayWithout = Number(r.estimated_cost_current_bill);
+        const dayWith = Number(r.estimated_cost_new_bill);
+        currentBill += dayWithout;
+        newBill += dayWith;
+
+        // pg returns `date` columns as JS Date objects — keying a Map by one
+        // directly would key on object identity, not calendar-date equality,
+        // so two properties' rows for the same date would never merge.
+        const dateKey = new Date(r.date).toISOString().slice(0, 10);
+        const bucket = byDate.get(dateKey) ?? { without: 0, with: 0 };
+        bucket.without += dayWithout;
+        bucket.with += dayWith;
+        byDate.set(dateKey, bucket);
+      }
+
+      series = Array.from(byDate.entries())
+        .sort(([a], [b]) => (a < b ? -1 : 1))
+        .map(([date, v]) => ({ date, without: v.without, with: v.with }));
+
       totals = {
-        solarKwh: Number(t.solar_kwh ?? 0),
-        batteryKwh: Number(t.battery_kwh ?? 0),
-        gridKwh: Number(t.grid_kwh ?? 0),
+        solarKwh,
+        batteryKwh,
+        gridKwh,
         currentBill,
         newBill,
         saving: currentBill - newBill,
-        propertiesWithData: Number(t.properties_with_data),
+        propertiesWithData: propertiesWithData.size,
       };
-      period = { start: null, end: latest, days: PORTFOLIO_WINDOW_DAYS };
+      period = { start: series[0]?.date ?? null, end: latest, days: series.length };
     }
 
     // Live check (spec §9a.3/§9a.4 point 5: query the current status, never
@@ -136,6 +167,7 @@ portfolioRouter.get(
         ...totals,
         avgSavingPerProperty: totals.propertiesWithData > 0 ? totals.saving / totals.propertiesWithData : 0,
       },
+      series,
       properties,
     });
   })

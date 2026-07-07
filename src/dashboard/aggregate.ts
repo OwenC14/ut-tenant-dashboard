@@ -23,6 +23,9 @@ export interface PropertyAggregate {
   solar?: { kwh: number; amount: number; sharePct: number };
   battery?: { kwh: number; amount: number; sharePct: number };
   grid?: { kwh: number; amount: number; sharePct: number };
+  // Daily "with vs without Phase 1" for the comparison graph (public/chart.js)
+  // — without/with are that day's grid-only vs actual bill.
+  series?: { date: string; without: number; with: number }[];
 }
 
 // Shared by the tenant dashboard (src/routes/dashboard.ts) and the HA/LA
@@ -91,5 +94,10 @@ export async function getPropertyAggregate(propertyId: number, days: number): Pr
     solar: { kwh: solarKwh, amount: solarAmount, sharePct: consumption > 0 ? (solarKwh / consumption) * 100 : 0 },
     battery: { kwh: batteryKwh, amount: batteryAmount, sharePct: consumption > 0 ? (batteryKwh / consumption) * 100 : 0 },
     grid: { kwh: gridKwh, amount: gridAmount, sharePct: consumption > 0 ? (gridKwh / consumption) * 100 : 0 },
+    series: rows.map((r) => ({
+      date: r.date,
+      without: Number(r.estimated_cost_current_bill),
+      with: Number(r.estimated_cost_new_bill),
+    })),
   };
 }

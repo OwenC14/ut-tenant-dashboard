@@ -21,14 +21,69 @@
 <div class="wrap" style="margin-top:40px;">
 
   <div class="card" style="margin-bottom:24px;">
+    <h2>Housing associations &amp; local authorities</h2>
+    <p class="hint" style="margin-bottom:16px;">Each organization only ever sees its own properties in the Housing Association portfolio view — this just groups the asset list below and lets you assign properties to one.</p>
+    <div style="overflow-x:auto;">
+      <table class="admin-table">
+        <thead><tr><th>Name</th><th>Type</th><th>Properties</th></tr></thead>
+        <tbody id="orgsBody"></tbody>
+      </table>
+    </div>
+    <form id="orgForm" style="margin-top:20px;">
+      <div class="field-row">
+        <div class="field"><label for="orgName">Name</label><input type="text" id="orgName" required placeholder="Fernbank Housing Association"></div>
+        <div class="field" style="max-width:200px;">
+          <label for="orgType">Type</label>
+          <select id="orgType">
+            <option value="HA">Housing Association</option>
+            <option value="LA">Local Authority</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+      </div>
+      <button type="submit" class="btn">Add organization</button>
+    </form>
+    <div id="orgMessage" class="demand-readout" style="display:none;"></div>
+
+    <h2 style="margin-top:28px;">Invite a portfolio user</h2>
+    <p class="hint" style="margin-bottom:16px;">They'll sign in at <code>/portfolio-login.html</code> and only ever see their own organization's properties.</p>
+    <form id="orgUserForm">
+      <div class="field" style="max-width:320px;">
+        <label for="orgUserOrg">Organization</label>
+        <select id="orgUserOrg" required></select>
+      </div>
+      <div class="field-row">
+        <div class="field"><label for="orgUserName">Name</label><input type="text" id="orgUserName" required></div>
+        <div class="field"><label for="orgUserEmail">Email</label><input type="email" id="orgUserEmail" required></div>
+      </div>
+      <div class="field" style="max-width:220px;">
+        <label for="orgUserRole">Role</label>
+        <select id="orgUserRole">
+          <option value="portfolio_admin">Portfolio Admin</option>
+          <option value="portfolio_viewer">Portfolio Viewer</option>
+          <option value="drilldown_viewer">Drill-down Viewer</option>
+        </select>
+      </div>
+      <button type="submit" class="btn">Invite portfolio user</button>
+    </form>
+    <div id="orgUserMessage" class="demand-readout" style="display:none;"></div>
+  </div>
+
+  <div class="card" style="margin-bottom:24px;">
     <h2>Add a property</h2>
     <form id="addForm">
       <div class="field"><label for="address">Address</label><input type="text" id="address" required></div>
       <div class="field"><label for="tenantName">Tenant name</label><input type="text" id="tenantName" required></div>
       <div class="field"><label for="foxDeviceSn">Fox device serial number</label><input type="text" id="foxDeviceSn" required></div>
       <div class="field"><label for="tenantEmail">Tenant email (optional — leave blank if the tenant will self-signup with their code)</label><input type="email" id="tenantEmail"></div>
-      <div class="field"><label for="arraySizeKwp">Array size, kWp</label><input type="number" id="arraySizeKwp" step="0.1"></div>
-      <div class="field"><label for="batteryCapacityKwh">Battery capacity, kWh</label><input type="number" id="batteryCapacityKwh" step="0.1"></div>
+      <div class="field-row">
+        <div class="field"><label for="arraySizeKwp">Array size, kWp</label><input type="number" id="arraySizeKwp" step="0.1"></div>
+        <div class="field"><label for="batteryCapacityKwh">Battery capacity, kWh</label><input type="number" id="batteryCapacityKwh" step="0.1"></div>
+      </div>
+      <div class="field" style="max-width:320px;">
+        <label for="propertyOrg">Housing association / local authority (optional)</label>
+        <select id="propertyOrg"><option value="">— None —</option></select>
+      </div>
       <button type="submit" class="btn">Add property</button>
     </form>
     <div id="addMessage" class="demand-readout" style="display:none;"></div>
@@ -36,16 +91,12 @@
 
   <div class="card">
     <h2>Properties</h2>
-    <p class="hint" style="margin-bottom:16px;">Give the tenant their signup code from the welcome paperwork — they use it at <code>/signup.html</code> to set up their own account.</p>
-    <div style="overflow-x:auto;">
-      <table class="admin-table">
-        <thead><tr>
-          <th>ID</th><th>Address</th><th>Tenant</th><th>Device SN</th><th>Signup code</th><th>Email</th>
-          <th>Fox linked</th><th>Last reading</th><th>Last rollup</th><th></th>
-        </tr></thead>
-        <tbody id="propertiesBody"></tbody>
-      </table>
+    <p class="hint" style="margin-bottom:16px;">Give the tenant their signup code from the welcome paperwork — they use it at <code>/signup.html</code> to set up their own account. Grouped by organization, unassigned properties last.</p>
+    <div class="field" style="max-width:280px;">
+      <label for="orgFilter">Filter by organization</label>
+      <select id="orgFilter"><option value="">All organizations</option></select>
     </div>
+    <div id="propertiesGroups"></div>
   </div>
 
   <div class="card" id="teamCard" style="margin-top:24px; display:none;">

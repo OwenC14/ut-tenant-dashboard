@@ -37,6 +37,10 @@ async function loadRange(range) {
 
   document.getElementById('periodNote').textContent =
     `${data.periodStart} to ${data.periodEnd} (${data.days} day${data.days === 1 ? '' : 's'} of data)`;
+
+  renderComparisonChart(document.getElementById('comparisonChart'), data.series, {
+    ariaLabel: 'Your bill with and without Phase 1, day by day',
+  });
 }
 
 let rangeSelectorInitialized = false;

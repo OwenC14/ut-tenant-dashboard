@@ -23,6 +23,7 @@ interface PropertyInput {
   batteryCapacityKwh?: number;
   installDate?: string;
   haOrLaPartner?: string;
+  organizationId?: number;
 }
 
 function validate(input: PropertyInput): string | null {
@@ -48,8 +49,8 @@ async function createProperty(input: PropertyInput) {
     try {
       const { rows } = await pool.query(
         `INSERT INTO properties
-           (address, tenant_name, fox_device_sn, tenant_email, array_size_kwp, battery_capacity_kwh, install_date, ha_or_la_partner, signup_code)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+           (address, tenant_name, fox_device_sn, tenant_email, array_size_kwp, battery_capacity_kwh, install_date, ha_or_la_partner, signup_code, organization_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
          RETURNING id`,
         [
           input.address,
@@ -61,6 +62,7 @@ async function createProperty(input: PropertyInput) {
           input.installDate ?? null,
           input.haOrLaPartner ?? null,
           signupCode,
+          input.organizationId ?? null,
         ]
       );
       const id = rows[0].id;
@@ -144,11 +146,13 @@ adminRouter.get(
     const { rows } = await pool.query(`
       SELECT
         p.id, p.address, p.tenant_name, p.fox_device_sn, p.tenant_email, p.organization_id, p.signup_code,
+        o.name AS organization_name,
         p.fox_access_token IS NOT NULL AS has_fox_token,
         (SELECT MAX(reading_time) FROM meter_readings WHERE property_id = p.id) AS last_reading_at,
         (SELECT MAX(date) FROM daily_rollups WHERE property_id = p.id) AS last_rollup_date
       FROM properties p
-      ORDER BY p.created_at DESC
+      LEFT JOIN organizations o ON o.id = p.organization_id
+      ORDER BY o.name NULLS LAST, p.created_at DESC
     `);
     res.json({ properties: rows });
   })

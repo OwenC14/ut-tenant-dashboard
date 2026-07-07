@@ -1,9 +1,9 @@
 function fmtGBP(n) { return '£' + n.toLocaleString('en-GB', { maximumFractionDigits: 0 }); }
 function fmtKwh(n) { return Math.round(n).toLocaleString('en-GB') + ' kWh'; }
 
-async function viewDrilldown(id, cellEl) {
+async function viewDrilldown(property, cellEl) {
   cellEl.textContent = 'Loading…';
-  const res = await fetch(`/portfolio/properties/${id}`, { credentials: 'include' });
+  const res = await fetch(`/portfolio/properties/${property.id}`, { credentials: 'include' });
   const data = await res.json();
   if (res.status === 403) {
     cellEl.innerHTML = `<span class="hint">${data.message}</span>`;
@@ -13,9 +13,17 @@ async function viewDrilldown(id, cellEl) {
     cellEl.innerHTML = '<span class="hint">No data yet</span>';
     return;
   }
-  cellEl.textContent =
-    `${fmtGBP(data.saving)} saved (${data.days}d) — solar ${fmtKwh(data.solar.kwh)}, ` +
+  cellEl.textContent = `${fmtGBP(data.saving)} saved (${data.days}d) — see detail below`;
+
+  document.getElementById('propertyDetailCard').style.display = 'block';
+  document.getElementById('propertyDetailAddress').textContent = ` — ${property.address}`;
+  document.getElementById('propertyDetailSummary').textContent =
+    `${fmtGBP(data.saving)} saved over ${data.days} days — solar ${fmtKwh(data.solar.kwh)}, ` +
     `battery ${fmtKwh(data.battery.kwh)}, grid ${fmtKwh(data.grid.kwh)}`;
+  renderComparisonChart(document.getElementById('propertyDetailChart'), data.series, {
+    ariaLabel: `${property.address}: bill with and without Phase 1, day by day`,
+  });
+  document.getElementById('propertyDetailCard').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 async function load() {
@@ -46,6 +54,10 @@ async function load() {
     bar.appendChild(d);
   });
 
+  renderComparisonChart(document.getElementById('portfolioChart'), data.series, {
+    ariaLabel: `${data.organization.name}: portfolio bill with and without Phase 1, day by day`,
+  });
+
   const tbody = document.getElementById('propertiesBody');
   tbody.innerHTML = '';
   data.properties.forEach((p) => {
@@ -61,7 +73,7 @@ async function load() {
       link.textContent = 'View usage data';
       link.addEventListener('click', (e) => {
         e.preventDefault();
-        viewDrilldown(p.id, cell);
+        viewDrilldown(p, cell);
       });
       cell.appendChild(link);
     } else {

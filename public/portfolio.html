@@ -52,6 +52,18 @@
     </div>
   </div>
 
+  <div class="card" style="margin-bottom:24px;">
+    <h2>Portfolio bill with and without Phase 1</h2>
+    <p class="hint" style="margin-bottom:14px;">Every property in this portfolio, summed day by day — what they'd have paid at grid price only, versus what solar and battery actually brought it down to.</p>
+    <div id="portfolioChart"></div>
+  </div>
+
+  <div class="card" id="propertyDetailCard" style="display:none; margin-bottom:24px;">
+    <h2>Property detail<span id="propertyDetailAddress"></span></h2>
+    <div id="propertyDetailSummary" class="demand-readout" style="margin-bottom:16px;"></div>
+    <div id="propertyDetailChart"></div>
+  </div>
+
   <div class="card">
     <h2>Properties</h2>
     <p class="hint" style="margin-bottom:16px;">
@@ -70,6 +82,7 @@
   </div>
 </div>
 
+<script src="chart.js"></script>
 <script src="portfolio.js"></script>
 </body>
 </html>

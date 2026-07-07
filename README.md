@@ -331,6 +331,56 @@ consent and returns real figures immediately after — all checked via curl and
 via a real browser screenshot of the modal → banner → settings sequence a
 first-time tenant actually sees.
 
+## Admin subgroups by organization
+
+`GET /admin/properties` now left-joins `organizations` and returns
+`organization_name`; `public/admin.html` groups the properties table into a
+section per organization (unassigned last), with a filter dropdown. A new
+"Housing associations & local authorities" card lists orgs with property
+counts, creates new ones, and invites their portfolio users
+(`POST /admin/organizations/:id/users`) directly from the UI. "Add a property"
+now takes an optional organization at creation time
+(`POST /admin/properties { ..., organizationId }`), on top of the existing
+`PATCH /admin/properties/:id/organization` for reassigning later.
+
+This is purely an admin-side grouping convenience — the isolation itself
+(each org only ever sees its own properties) was already enforced by
+`organization_id` scoping in every `/portfolio/*` query, verified back in
+step 8.
+
+## Bill comparison graph ("with vs without Phase 1")
+
+`src/dashboard/aggregate.ts`'s `getPropertyAggregate` now also returns a daily
+`series: [{ date, without, with }]` — that day's grid-only bill vs actual bill
+— for the same window it already aggregates. `GET /portfolio/summary` computes
+an equivalent series summed across every property in the org (fixed a bug
+while building this: grouping by a Postgres `date` value returned as a JS
+`Date` object relies on object identity, not calendar-date equality, so two
+properties' rows for the same date never merged until the code converted it
+to an ISO date string first).
+
+`public/chart.js` — a small dependency-free SVG line/area chart. Its two-colour
+palette (brand yellow for "with Phase 1", a new teal for "without") was
+validated with the dataviz skill's script against the app's dark result-card
+surface: chroma floor, CVD separation, and contrast all pass; the lightness-
+band check is a known, accepted exception since it assumes a near-black
+surface and the brand's charcoal card isn't one — see the comment at the top
+of `chart.js`. 2px lines, ~10% opacity area fill, end-dot markers with direct
+end labels, hover crosshair + tooltip, and a legend (mandatory for 2 series).
+Used in three places, all through the same component:
+
+- Tenant's own dashboard (`public/dashboard.js`) — one chart per selected range.
+- Portfolio aggregate (`public/portfolio.js`) — every property in the org, summed.
+- Portfolio drill-down (same file) — one property's own chart, gated by the
+  same `ha_data_sharing` consent check as the rest of drill-down.
+
+Verified end-to-end locally with varied synthetic daily data (28 days, three
+properties across two organizations): both chart placements render correctly
+in a real browser, the portfolio aggregate correctly sums per-day across
+properties (28 distinct days, not double-counted), and cross-org isolation
+holds for the new series data exactly as it does for everything else in
+`/portfolio/*`.
+
 ## Known gaps before real go-live
 
 Everything in spec §10's build order (steps 1-9) is implemented and verified
