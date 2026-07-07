@@ -1,6 +1,7 @@
-import express from 'express';
+import express, { NextFunction, Request, Response } from 'express';
 import { env } from './config/env';
 import { pool } from './db/pool';
+import { oauthRouter } from './routes/oauth';
 
 const app = express();
 app.use(express.json());
@@ -12,6 +13,13 @@ app.get('/health', async (_req, res) => {
   } catch {
     res.status(503).json({ status: 'error', db: 'unreachable' });
   }
+});
+
+app.use('/oauth', oauthRouter);
+
+app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+  console.error(err);
+  res.status(502).json({ error: 'upstream request failed' });
 });
 
 app.listen(env.PORT, () => {

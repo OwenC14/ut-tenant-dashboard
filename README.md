@@ -10,7 +10,7 @@ Full spec: [`docs/UT_Tenant_Dashboard_Spec.md`](docs/UT_Tenant_Dashboard_Spec.md
 Build order (spec §10):
 
 - [x] 1. Scaffold repo, Postgres schema, deploy skeleton
-- [ ] 2. Fox OAuth flow for one test device
+- [x] 2. Fox OAuth flow for one test device
 - [ ] 3. Poller for one device
 - [ ] 4. Nightly rollup job + cost calculation
 - [ ] 5. Dashboard API + minimal frontend
@@ -34,6 +34,30 @@ npm run dev              # starts the API on PORT (default 3000)
 ```
 
 `GET /health` checks the process is up and the DB is reachable.
+
+## Fox OAuth flow (spec §4.1)
+
+- `GET /oauth/fox/authorize?propertyId={id}` — redirects to Fox's consent page for
+  that property. Requires the property to already exist in `properties`.
+- `GET /oauth/fox/callback` — Fox redirects here with `code`/`state` after consent;
+  exchanges the code for tokens and stores them (encrypted, see below) against the
+  property.
+- `npm run refresh-tokens` — refreshes any property's tokens expiring within the
+  next hour (spec §4.1 point 5: refresh is scheduled, not on-demand). Point Render's
+  cron job service at this once deployed.
+
+`ENCRYPTION_KEY` (`openssl rand -base64 32`) encrypts `fox_access_token` /
+`fox_refresh_token` at rest (AES-256-GCM, spec §8) — never store or log them in
+plaintext.
+
+Fox's public OAuth docs (linked in the spec) don't give a fully explicit token
+response schema — `src/fox/client.ts` currently assumes standard OAuth2 field names
+(`access_token`, `refresh_token`, `expires_in`) and endpoint paths (`/oauth2/token`,
+`/oauth2/refresh`). Confirm both against Fox's sandbox/Postman collection the first
+time this runs with a real `client_id` — that one file is the only thing that should
+need to change if they differ. The flow itself (redirect, state/CSRF check, token
+exchange, encrypted storage, refresh) has been verified end-to-end locally against a
+mock Fox server standing in for foxesscloud.com.
 
 ## Database
 
