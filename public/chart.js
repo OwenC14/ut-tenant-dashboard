@@ -57,7 +57,16 @@ function renderComparisonChart(container, series, opts) {
 
   const fmtX = opts.granularity === 'hour' ? fmtHour : fmtDate;
 
-  const W = 720, H = 260;
+  // Size the viewBox to the container's actual current width rather than a
+  // fixed 720 scaled down by CSS -- on a phone-width card, scaling a fixed
+  // 720-wide viewBox down via width:100% shrinks the text/markers along
+  // with everything else to the point of being unreadable. Setting the SVG's
+  // width/height attributes to these exact pixel values (not '100%') means
+  // the viewBox always renders 1:1, so text stays at its natural, legible
+  // size at any width; a shorter aspect ratio on narrow screens avoids an
+  // overly tall chart relative to how little width it has to work with.
+  const W = Math.min(720, container.clientWidth || 720);
+  const H = W < 500 ? 220 : 260;
   const margin = { top: 16, right: 16, bottom: 28, left: 44 };
   const plotW = W - margin.left - margin.right;
   const plotH = H - margin.top - margin.bottom;
@@ -69,7 +78,9 @@ function renderComparisonChart(container, series, opts) {
   const x = (i) => margin.left + (series.length === 1 ? plotW / 2 : (i / (series.length - 1)) * plotW);
   const y = (v) => margin.top + plotH - (v / yMax) * plotH;
 
-  const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, width: '100%', height: H, role: 'img', 'aria-label': opts.ariaLabel || 'Comparison chart' });
+  const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, width: W, height: H, role: 'img', 'aria-label': opts.ariaLabel || 'Comparison chart' });
+  svg.style.display = 'block';
+  svg.style.maxWidth = '100%';
 
   // Gridlines + y labels (hairline, recessive)
   const gridGroup = svgEl('g');

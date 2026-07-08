@@ -4,7 +4,7 @@ import { requireOrgSession } from '../auth/requireOrgSession';
 import { asyncHandler } from '../lib/asyncHandler';
 import { getCurrentAgreement, getCurrentConsentStatus } from '../consent/agreements';
 import { getAggregateForRange, getHourlyAggregate, RANGE_DAYS, DASHBOARD_RANGES, DashboardRange } from '../dashboard/aggregate';
-import { computePropertyStatus } from '../dashboard/propertyStatus';
+import { computePropertyStatus, STATUS_LABELS } from '../dashboard/propertyStatus';
 
 export const portfolioRouter = Router();
 
@@ -251,5 +251,114 @@ portfolioRouter.get(
 
     const aggregate = await getAggregateForRange(propertyId, range as DashboardRange);
     res.json({ property: rows[0], range, granularity: range === '24h' ? 'hour' : 'day', ...aggregate });
+  })
+);
+
+function csvField(v: string | number | null | undefined): string {
+  if (v === null || v === undefined) return '';
+  const s = String(v);
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+// Client interface CSV export — a property-by-property data snapshot
+// (solar/battery/grid kWh, bill/saving figures) for the selected range.
+// Same consent gate as the drill-down endpoint above: a property's actual
+// usage figures only appear here if that tenant has current, accepted
+// ha_data_sharing consent — otherwise the row still lists the property but
+// leaves the usage columns blank, exactly like "Not shared" in the UI.
+portfolioRouter.get(
+  '/export.csv',
+  requireOrgSession,
+  asyncHandler(async (req, res) => {
+    const organizationId = req.org!.organizationId;
+    const range = String(req.query.range ?? 'month');
+    if (!DASHBOARD_RANGES.includes(range as DashboardRange)) {
+      res.status(400).json({ error: `range must be one of: ${DASHBOARD_RANGES.join(', ')}` });
+      return;
+    }
+
+    const { rows: propertyRows } = await pool.query<PropertyRow>(
+      `SELECT p.id, p.address, p.postcode, p.tenant_name, p.connection_date,
+              p.fox_access_token IS NOT NULL AS has_fox_token,
+              p.tenant_email IS NOT NULL AS has_tenant_email,
+              (SELECT MAX(reading_time) FROM meter_readings WHERE property_id = p.id) AS last_reading_at,
+              (SELECT MAX(date) FROM daily_rollups WHERE property_id = p.id) AS last_rollup_date
+       FROM properties p
+       WHERE p.organization_id = $1
+       ORDER BY p.address`,
+      [organizationId]
+    );
+
+    const haAgreement = await getCurrentAgreement('ha_data_sharing');
+    let sharedPropertyIds = new Set<number>();
+    if (haAgreement && propertyRows.length > 0) {
+      const { rows: consentRows } = await pool.query(
+        `SELECT DISTINCT ON (property_id) property_id, status
+         FROM consent_records
+         WHERE agreement_id = $1 AND property_id = ANY($2::bigint[])
+         ORDER BY property_id, recorded_at DESC`,
+        [haAgreement.id, propertyRows.map((p) => p.id)]
+      );
+      sharedPropertyIds = new Set(consentRows.filter((r) => r.status === 'accepted').map((r) => r.property_id));
+    }
+
+    const header = [
+      'Address', 'Postcode', 'Tenant', 'Connection date', 'Status', 'Data shared',
+      'Solar kWh', 'Battery kWh', 'Grid kWh',
+      'Bill at grid price only (GBP)', 'Actual bill (GBP)', 'Saving (GBP)',
+    ];
+    const lines = [header.map(csvField).join(',')];
+
+    for (const p of propertyRows) {
+      const { status } = computePropertyStatus({
+        hasFoxToken: p.has_fox_token,
+        hasTenantEmail: p.has_tenant_email,
+        lastReadingAt: p.last_reading_at,
+        lastRollupDate: p.last_rollup_date,
+      });
+      const shared = sharedPropertyIds.has(p.id);
+
+      let solarKwh = '';
+      let batteryKwh = '';
+      let gridKwh = '';
+      let currentBill = '';
+      let newBill = '';
+      let saving = '';
+      if (shared) {
+        const agg = await getAggregateForRange(p.id, range as DashboardRange);
+        if (agg.hasData) {
+          solarKwh = (agg.solar?.kwh ?? 0).toFixed(2);
+          batteryKwh = (agg.battery?.kwh ?? 0).toFixed(2);
+          gridKwh = (agg.grid?.kwh ?? 0).toFixed(2);
+          currentBill = (agg.currentBill ?? 0).toFixed(2);
+          newBill = (agg.newBill ?? 0).toFixed(2);
+          saving = (agg.saving ?? 0).toFixed(2);
+        }
+      }
+
+      lines.push(
+        [
+          p.address,
+          p.postcode ?? '',
+          p.tenant_name,
+          p.connection_date ? new Date(p.connection_date).toISOString().slice(0, 10) : '',
+          STATUS_LABELS[status],
+          shared ? 'Yes' : 'No',
+          solarKwh,
+          batteryKwh,
+          gridKwh,
+          currentBill,
+          newBill,
+          saving,
+        ]
+          .map(csvField)
+          .join(',')
+      );
+    }
+
+    const filename = `portfolio-export-${range}-${new Date().toISOString().slice(0, 10)}.csv`;
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(lines.join('\r\n'));
   })
 );

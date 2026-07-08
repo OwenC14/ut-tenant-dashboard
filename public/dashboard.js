@@ -98,26 +98,11 @@ function renderHaSettings(haDataSharing) {
   };
 }
 
-function showHaPrompt(haDataSharing) {
-  document.getElementById('haDataSharingText').textContent = haDataSharing.documentTextOrUrl;
-  const banner = document.getElementById('haDataSharingPrompt');
-  banner.style.display = 'block';
-
-  const hide = () => {
-    banner.style.display = 'none';
-  };
-  document.getElementById('haAccept').onclick = async () => {
-    await postConsent('ha_data_sharing', 'accepted');
-    hide();
-    checkConsentAndLoad();
-  };
-  document.getElementById('haDecline').onclick = async () => {
-    await postConsent('ha_data_sharing', 'declined');
-    hide();
-    checkConsentAndLoad();
-  };
-}
-
+// Tenant Interface spec: the ha_data_sharing notice now lives at sign-in
+// itself (index.html/signup.html — the backend auto-records 'accepted' on
+// first login, src/routes/auth.ts) rather than a separate accept/decline
+// banner shown after the fact. This page just reflects whatever that
+// decision currently is, adjustable in Settings.
 async function checkConsentAndLoad() {
   const res = await fetch('/api/consent/status', { credentials: 'include' });
   if (res.status === 401) {
@@ -139,21 +124,19 @@ async function checkConsentAndLoad() {
 
   document.getElementById('appTermsModal').style.display = 'none';
 
-  // §9a.4 point 2: distinct step, not folded into app_terms, not a
-  // forced gate — only shown when this property has never decided for the
-  // CURRENT agreement version (status null covers both "never asked" and
-  // "asked under an old version that's since changed").
-  if (haDataSharing && haDataSharing.status === null) {
-    showHaPrompt(haDataSharing);
-  } else {
-    document.getElementById('haDataSharingPrompt').style.display = 'none';
-  }
   if (haDataSharing) {
     renderHaSettings(haDataSharing);
   }
 
   initRangeSelector();
 }
+
+document.getElementById('settingsOpen').addEventListener('click', () => {
+  document.getElementById('settingsModal').style.display = 'flex';
+});
+document.getElementById('settingsClose').addEventListener('click', () => {
+  document.getElementById('settingsModal').style.display = 'none';
+});
 
 checkConsentAndLoad();
 

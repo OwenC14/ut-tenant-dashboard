@@ -10,7 +10,7 @@ declare global {
         role: string;
       };
       adminUserId?: number;
-      adminRole?: 'super_admin' | 'install_staff';
+      adminRole?: 'super_admin' | 'operations' | 'installer';
     }
   }
 }

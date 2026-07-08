@@ -192,19 +192,37 @@ device, and their signup code so they can set up their own dashboard account.
 Deliberately not gated on any consent/agreement step yet — that's step 9,
 sequenced after onboarding on purpose (§10).
 
-### Admin accounts (Super Admin / Install Staff)
+### Admin accounts (Super Admin / Operations / Installer)
 
-Two-tier accounts, `admin_users` (migration `006_admin_users.sql`), authenticated
-the same magic-link way as tenants and org users (`/admin-auth/magic-link`,
-`/admin-auth/verify`, `public/admin-login.html`) — no more shared key for
-day-to-day use:
+Three-tier accounts, `admin_users` (migration `006_admin_users.sql`, tiers
+updated by `009_admin_tiers_v2.sql`), authenticated the same magic-link way as
+tenants and org users (`/admin-auth/magic-link`, `/admin-auth/verify`,
+`public/admin-login.html`) — no more shared key for day-to-day use:
 
-- **Super Admin** — everything Install Staff can do, plus managing the team
-  itself (`GET/POST /admin/team`, `DELETE /admin/team/:id`).
-- **Install Staff** — can onboard properties and organizations, but `/admin/team`
-  is `requireSuperAdmin`-gated and returns 403 for them. `public/admin.html`
-  also just hides the Team members section for them (`GET /admin/me` tells the
-  frontend which role is signed in).
+- **Super Admin** — access to every client, can create new clients
+  (`POST /admin/organizations`), reassign a property between clients
+  (`PATCH /admin/properties/:id/organization`), manage the team
+  (`GET/POST /admin/team`, `DELETE /admin/team/:id`), and assign operations/
+  installer staff to clients (`GET/POST /admin/organizations/:id/assignments`,
+  `DELETE .../assignments/:adminUserId`).
+- **Operations** — full onboarding/management access (add properties, batch
+  import, invite portfolio users), but only for whichever clients they've
+  been assigned in `admin_client_assignments` — `src/auth/adminScope.ts`'s
+  `resolveAdminClientScope()` resolves this per request and every `/admin/*`
+  route filters or 403s accordingly. Can't create new clients or reassign a
+  property to a client outside their scope.
+- **Installer** — read-only, scoped the same way as Operations. An installer
+  with *no* client assignments is treated as a Union Technical installer and
+  sees every client (the spec's stated exception) — one with assignments is
+  scoped to just those. `blockInstallerWrites` middleware 403s any
+  POST/PATCH/DELETE for this role regardless of scope.
+
+`public/admin.html` reflects all of this: the "Add organization" form and
+Team card are Super-Admin-only; "Add a property"/CSV import are hidden for
+Installers; missing postcode/tenant-email fields show a plain `—` instead of
+a clickable "+ add" for Installers (who'd just get a 403 clicking it); and
+the clients table shows/edits each client's assigned staff (Super Admin
+only — everyone else sees a read-only list).
 
 `ADMIN_API_KEY` still exists as a **break-glass/bootstrap credential** — it's
 always treated as `super_admin` on `requireAdmin`-protected routes. Since
@@ -440,6 +458,91 @@ aggregate, and the per-property drill-down; confirmed switching ranges while a
 drill-down is open re-fetches it at the new range (not stale data left over
 from the previous range).
 
+## Interface updates (client feedback batch)
+
+A round of specific interface feedback, implemented across all three
+interfaces plus two new reference docs:
+
+**Layout — graph above the summary, range picker inside the chart card.**
+`public/dashboard.html` and `public/portfolio.html` (both the portfolio
+aggregate and the per-property drill-down) now show the "bill with and
+without Phase 1" chart *first*, with the 24 Hour/Week/Month/Year buttons
+inside that same card, instead of a page-level range picker above a
+bill-summary-first layout. No backend change — purely a reordering of
+existing elements plus moving the already-existing `#rangeSelector` markup
+into the chart card.
+
+**Tenant: sharing toggle moved into Settings; consent folded into sign-in.**
+`public/dashboard.html`'s main page no longer has a standalone "Data sharing
+settings" card or an accept/decline banner — both are gone. A "Settings"
+button in the header opens a modal with the sharing toggle. `ha_data_sharing`
+consent is now recorded automatically the first time a property completes a
+sign-in (`src/routes/auth.ts`'s `/auth/verify`, tagged
+`recordedBy: 'implied_at_signin'`) rather than requiring a separate
+accept/decline click — `public/index.html` and `public/signup.html` both
+carry the "by signing in, you agree... you can opt out any time in Settings"
+notice. This only ever *sets* consent when it's never been decided for the
+current agreement version (`getCurrentConsentStatus(...).status === null`) —
+an explicit decline/withdraw already on record, or a later change of mind in
+Settings, is never silently overwritten by a subsequent login.
+
+**Client interface: CSV export.** `GET /portfolio/export.csv?range=...`
+(same range options as everywhere else) streams a property-by-property CSV
+(address, postcode, tenant, connection date, status, solar/battery/grid kWh,
+bill/saving figures) for the signed-in org — a "Download CSV" button sits
+above the properties table in `public/portfolio.html`. Respects the same
+consent gate as the drill-down endpoint: a property's usage columns are only
+populated if that tenant currently has accepted `ha_data_sharing` consent;
+otherwise the row still lists the property (address/postcode/tenant/status)
+with blank usage figures, exactly like "Not shared" in the UI — this export
+can't be used to see individual usage data consent was withheld for.
+
+**Admin: CSV batch import with Fox-link surfacing and completion prompts.**
+`public/admin.html` now has a CSV file input next to the existing single-
+property form — parsed client-side (`parseCsv()` in `admin.js`, handles
+quoted fields) into the same shape `POST /admin/properties/bulk` already
+accepted, so no backend parsing was needed. Each created row's Fox consent
+link and signup code are shown immediately so the connection process can
+start right away; anything missing a postcode or tenant email gets a
+click-to-fill-in "+ add" control (new `PATCH /admin/properties/:id`
+endpoint) instead of a second trip through a spreadsheet. The same
+completion control also appears in the regular properties table for any
+property missing those fields, whichever way it was created.
+
+**Mobile/tablet.** `public/chart.js`'s SVG chart now sizes its `viewBox` to
+the container's actual measured width (capped at 720px) instead of a fixed
+720-wide box scaled down by CSS — the old approach shrank axis labels and
+legend text to the point of being unreadable on a phone-width card, since
+scaling the whole 720-unit coordinate space down to ~300 real pixels scales
+the "10.5px" text down to ~4px along with everything else. Sizing the
+viewBox to match the real rendered width keeps text at its natural, legible
+size at any screen width. `style.css` also softens the range-picker pill's
+border-radius on screens ≤480px, since a 999px "fully round" radius looks
+like a stretched stadium once the four buttons wrap to two rows. Checked at
+390×844 (phone) and 768×1024 (tablet) viewports on both the tenant dashboard
+and the portfolio view.
+
+**New reference docs:**
+- `docs/Fox_API_Integration_Guide.md` — granular walkthrough of the Fox
+  OAuth linking flow, the polling job, token encryption/refresh, required
+  environment variables, and what's still unverified against Fox's real
+  sandbox.
+- `docs/Release_And_Data_Retention.md` — how the migrate-then-deploy sequence
+  keeps tenant accounts, sessions, Fox connections, and usage history intact
+  across a version upgrade, and what to add (a real deploy pipeline) before
+  this runs against production data.
+
+Verified end-to-end locally: scoped Operations/Installer accounts confirmed
+to see only their assigned clients (and an unassigned Installer confirmed to
+see everything, per spec) via direct API checks; CSV batch import exercised
+with a mixed valid/invalid file (partial success, per-row errors surfaced);
+the `PATCH /admin/properties/:id` completion flow confirmed to actually
+persist; CSV export checked against a shared and a not-shared property in
+the same org, confirming the consent gate holds; the sign-in consent
+auto-accept confirmed against `consent_records` directly; and all of the
+above checked visually in a real browser, including at phone/tablet
+viewport widths.
+
 ## Known gaps before real go-live
 
 Everything in spec §10's build order (steps 1-9) is implemented and verified
@@ -478,5 +581,11 @@ build-order steps 8-9.
 ## Deploy
 
 `render.yaml` is a Render Blueprint: one web service + one managed Postgres
-database. Background worker/cron services for the token refresher, poller, and
-nightly rollup job (spec §6) get added once those jobs exist (steps 2-4).
+database + three cron services (poller every 15 minutes, token refresher
+every 30 minutes, nightly rollup at 02:00) running `src/jobs/poll.ts`,
+`refresh-tokens.ts`, and `rollup.ts` respectively. All three were missing
+from the blueprint until this was caught while writing
+`docs/Fox_API_Integration_Guide.md` — the jobs existed in code since steps
+2-4 but nothing was ever scheduling them, so no Fox usage data would
+actually have been collected on a real deploy despite the app code being
+otherwise correct.

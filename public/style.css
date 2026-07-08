@@ -54,6 +54,13 @@ header .tag strong { color: var(--yellow); font-weight: bold; }
   color: var(--charcoal-light); cursor: pointer; transition: background 0.15s ease, color 0.15s ease;
 }
 .pagenav button.active { background: var(--charcoal); color: var(--yellow); }
+@media (max-width: 480px) {
+  /* Four range buttons wrap to two rows on a phone-width screen -- a full
+     999px pill radius on a two-row box reads as a stretched stadium shape,
+     so soften it to a normal rounded rect once it's wrapping. */
+  .pagenav-inner { border-radius: 14px; justify-content: center; }
+  .pagenav button { padding: 9px 14px; }
+}
 
 .card {
   background: var(--white); border: 1px solid var(--line); border-radius: 10px;

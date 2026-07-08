@@ -21,15 +21,15 @@
 <div class="wrap" style="margin-top:40px;">
 
   <div class="card" style="margin-bottom:24px;">
-    <h2>Housing associations &amp; local authorities</h2>
-    <p class="hint" style="margin-bottom:16px;">Each organization only ever sees its own properties in the Housing Association portfolio view — this just groups the asset list below and lets you assign properties to one.</p>
+    <h2>Housing associations &amp; local authorities (clients)</h2>
+    <p class="hint" style="margin-bottom:16px;">Each client only ever sees its own properties in the Housing Association portfolio view — this just groups the asset list below and lets you assign properties to one. Operations and installer staff only see the clients they're assigned to below; Super Admins see all of them.</p>
     <div style="overflow-x:auto;">
       <table class="admin-table">
-        <thead><tr><th>Name</th><th>Type</th><th>Properties</th></tr></thead>
+        <thead><tr><th>Name</th><th>Type</th><th>Properties</th><th>Assigned staff</th></tr></thead>
         <tbody id="orgsBody"></tbody>
       </table>
     </div>
-    <form id="orgForm" style="margin-top:20px;">
+    <form id="orgForm" style="margin-top:20px; display:none;">
       <div class="field-row">
         <div class="field"><label for="orgName">Name</label><input type="text" id="orgName" required placeholder="Fernbank Housing Association"></div>
         <div class="field" style="max-width:200px;">
@@ -45,34 +45,37 @@
     </form>
     <div id="orgMessage" class="demand-readout" style="display:none;"></div>
 
-    <h2 style="margin-top:28px;">Invite a portfolio user</h2>
-    <p class="hint" style="margin-bottom:16px;">They'll sign in at <code>/portfolio-login.html</code> and only ever see their own organization's properties.</p>
-    <form id="orgUserForm">
-      <div class="field" style="max-width:320px;">
-        <label for="orgUserOrg">Organization</label>
-        <select id="orgUserOrg" required></select>
-      </div>
-      <div class="field-row">
-        <div class="field"><label for="orgUserName">Name</label><input type="text" id="orgUserName" required></div>
-        <div class="field"><label for="orgUserEmail">Email</label><input type="email" id="orgUserEmail" required></div>
-      </div>
-      <div class="field" style="max-width:220px;">
-        <label for="orgUserRole">Role</label>
-        <select id="orgUserRole">
-          <option value="portfolio_admin">Portfolio Admin</option>
-          <option value="portfolio_viewer">Portfolio Viewer</option>
-          <option value="drilldown_viewer">Drill-down Viewer</option>
-        </select>
-      </div>
-      <button type="submit" class="btn">Invite portfolio user</button>
-    </form>
-    <div id="orgUserMessage" class="demand-readout" style="display:none;"></div>
+    <div id="orgUserSection">
+      <h2 style="margin-top:28px;">Invite a portfolio user</h2>
+      <p class="hint" style="margin-bottom:16px;">They'll sign in at <code>/portfolio-login.html</code> and only ever see their own organization's properties.</p>
+      <form id="orgUserForm">
+        <div class="field" style="max-width:320px;">
+          <label for="orgUserOrg">Organization</label>
+          <select id="orgUserOrg" required></select>
+        </div>
+        <div class="field-row">
+          <div class="field"><label for="orgUserName">Name</label><input type="text" id="orgUserName" required></div>
+          <div class="field"><label for="orgUserEmail">Email</label><input type="email" id="orgUserEmail" required></div>
+        </div>
+        <div class="field" style="max-width:220px;">
+          <label for="orgUserRole">Role</label>
+          <select id="orgUserRole">
+            <option value="portfolio_admin">Portfolio Admin</option>
+            <option value="portfolio_viewer">Portfolio Viewer</option>
+            <option value="drilldown_viewer">Drill-down Viewer</option>
+          </select>
+        </div>
+        <button type="submit" class="btn">Invite portfolio user</button>
+      </form>
+      <div id="orgUserMessage" class="demand-readout" style="display:none;"></div>
+    </div>
   </div>
 
-  <div class="card" style="margin-bottom:24px;">
+  <div class="card" id="addPropertyCard" style="margin-bottom:24px;">
     <h2>Add a property</h2>
     <form id="addForm">
       <div class="field"><label for="address">Address</label><input type="text" id="address" required></div>
+      <div class="field"><label for="postcode">Postcode</label><input type="text" id="postcode"></div>
       <div class="field"><label for="tenantName">Tenant name</label><input type="text" id="tenantName" required></div>
       <div class="field"><label for="foxDeviceSn">Fox device serial number</label><input type="text" id="foxDeviceSn" required></div>
       <div class="field"><label for="tenantEmail">Tenant email (optional — leave blank if the tenant will self-signup with their code)</label><input type="email" id="tenantEmail"></div>
@@ -87,6 +90,18 @@
       <button type="submit" class="btn">Add property</button>
     </form>
     <div id="addMessage" class="demand-readout" style="display:none;"></div>
+
+    <h2 style="margin-top:28px;">Batch import from CSV</h2>
+    <p class="hint" style="margin-bottom:16px;">
+      Columns: <code>address, postcode, tenantName, foxDeviceSn, tenantEmail, arraySizeKwp, batteryCapacityKwh, organizationId</code> (first row is treated as a header and skipped).
+      Each successfully created row gets a Fox consent link and signup code below so you can kick off connecting the battery straight away — anything missing a postcode or tenant email is flagged so you can fill it in without leaving this page.
+    </p>
+    <div class="field" style="max-width:320px;">
+      <label for="csvFile">CSV file</label>
+      <input type="file" id="csvFile" accept=".csv,text/csv">
+    </div>
+    <button type="button" class="btn" id="csvImportBtn">Import CSV</button>
+    <div id="csvResults" style="margin-top:16px;"></div>
   </div>
 
   <div class="card">
@@ -101,10 +116,10 @@
 
   <div class="card" id="teamCard" style="margin-top:24px; display:none;">
     <h2>Team members</h2>
-    <p class="hint" style="margin-bottom:16px;">Super Admins can manage the team; Install Staff can onboard properties and organizations but can't add or remove team members.</p>
+    <p class="hint" style="margin-bottom:16px;">Super Admins have access to everything and manage the team. Operations staff manage properties and portfolio users for whichever clients they're assigned (below, in the clients table). Installers get read-only access to their assigned clients — an installer with no clients assigned is treated as a Union Technical installer and can see everything.</p>
     <div style="overflow-x:auto;">
       <table class="admin-table">
-        <thead><tr><th>Name</th><th>Email</th><th>Role</th><th></th></tr></thead>
+        <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Assigned clients</th><th></th></tr></thead>
         <tbody id="teamBody"></tbody>
       </table>
     </div>
@@ -115,7 +130,8 @@
         <label for="teamRole">Role</label>
         <select id="teamRole">
           <option value="super_admin">Super Admin</option>
-          <option value="install_staff">Install Staff</option>
+          <option value="operations">Operations</option>
+          <option value="installer">Installer</option>
         </select>
       </div>
       <button type="submit" class="btn">Invite team member</button>

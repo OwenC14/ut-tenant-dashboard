@@ -148,6 +148,7 @@ async function load() {
 
   document.getElementById('orgName').textContent = data.organization.name;
   document.getElementById('propertyCount').textContent = data.propertyCount;
+  document.getElementById('exportCsv').href = `/portfolio/export.csv?range=${currentRange}`;
   document.getElementById('currentBill').textContent = fmtGBP(data.totals.currentBill);
   document.getElementById('newBill').textContent = fmtGBP(data.totals.newBill);
   document.getElementById('totalSaving').textContent = fmtGBP(data.totals.saving);

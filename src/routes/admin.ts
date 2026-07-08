@@ -4,8 +4,14 @@ import { pool } from '../db/pool';
 import { asyncHandler } from '../lib/asyncHandler';
 import { requireAdmin } from '../auth/requireAdmin';
 import { requireSuperAdmin } from '../auth/requireSuperAdmin';
+import { resolveAdminClientScope, blockInstallerWrites, AdminClientScope } from '../auth/adminScope';
 import { isUniqueViolation, uniqueViolationConstraint } from '../lib/db';
 import { env } from '../config/env';
+
+function scopeIncludes(scope: AdminClientScope, organizationId: number | null): boolean {
+  if (scope === 'all') return true;
+  return organizationId !== null && scope.includes(organizationId);
+}
 
 export const adminRouter = Router();
 adminRouter.use(requireAdmin);
@@ -88,14 +94,27 @@ async function createProperty(input: PropertyInput) {
 
 adminRouter.post(
   '/properties',
+  blockInstallerWrites,
   asyncHandler(async (req, res) => {
-    const error = validate(req.body ?? {});
+    const input: PropertyInput = req.body ?? {};
+    const error = validate(input);
     if (error) {
       res.status(400).json({ error });
       return;
     }
+
+    // Operations staff only manage the clients they've been assigned --
+    // super_admin can create for any client, or none at all.
+    if (req.adminRole === 'operations') {
+      const scope = await resolveAdminClientScope(req);
+      if (!scopeIncludes(scope, input.organizationId ?? null)) {
+        res.status(403).json({ error: 'you are not assigned to that client' });
+        return;
+      }
+    }
+
     try {
-      const result = await createProperty(req.body);
+      const result = await createProperty(input);
       res.status(201).json(result);
     } catch (err) {
       if (isUniqueViolation(err)) {
@@ -112,6 +131,7 @@ adminRouter.post(
 // abort the rest of the batch.
 adminRouter.post(
   '/properties/bulk',
+  blockInstallerWrites,
   asyncHandler(async (req, res) => {
     const properties: PropertyInput[] = req.body?.properties;
     if (!Array.isArray(properties) || properties.length === 0) {
@@ -119,11 +139,17 @@ adminRouter.post(
       return;
     }
 
+    const scope = req.adminRole === 'operations' ? await resolveAdminClientScope(req) : 'all';
+
     const results = [];
     for (const [index, input] of properties.entries()) {
       const error = validate(input);
       if (error) {
         results.push({ index, status: 'error', error });
+        continue;
+      }
+      if (!scopeIncludes(scope, input.organizationId ?? null)) {
+        results.push({ index, status: 'error', error: 'you are not assigned to that client' });
         continue;
       }
       try {
@@ -144,9 +170,15 @@ adminRouter.post(
 
 adminRouter.get(
   '/properties',
-  asyncHandler(async (_req, res) => {
-    const { rows } = await pool.query(`
-      SELECT
+  asyncHandler(async (req, res) => {
+    // Unassigned properties (organization_id IS NULL) are super_admin-only --
+    // operations/installer are scoped to specific clients, and an unassigned
+    // property isn't any client's yet.
+    const scope = await resolveAdminClientScope(req);
+    const scopeClause = scope === 'all' ? '' : 'WHERE p.organization_id = ANY($1::bigint[])';
+
+    const { rows } = await pool.query(
+      `SELECT
         p.id, p.address, p.postcode, p.tenant_name, p.fox_device_sn, p.tenant_email, p.organization_id, p.signup_code,
         p.connection_date,
         o.name AS organization_name,
@@ -155,14 +187,86 @@ adminRouter.get(
         (SELECT MAX(date) FROM daily_rollups WHERE property_id = p.id) AS last_rollup_date
       FROM properties p
       LEFT JOIN organizations o ON o.id = p.organization_id
-      ORDER BY o.name NULLS LAST, p.created_at DESC
-    `);
+      ${scopeClause}
+      ORDER BY o.name NULLS LAST, p.created_at DESC`,
+      scope === 'all' ? [] : [scope]
+    );
     res.json({ properties: rows });
   })
 );
 
+// General field completion -- lets staff fill in whatever a batch CSV import
+// left blank (postcode, tenant email, array/battery sizing) without a
+// separate "edit property" page.
+interface PropertyPatchInput {
+  postcode?: string;
+  tenantEmail?: string;
+  arraySizeKwp?: number;
+  batteryCapacityKwh?: number;
+}
+
+adminRouter.patch(
+  '/properties/:id',
+  blockInstallerWrites,
+  asyncHandler(async (req, res) => {
+    const propertyId = Number(req.params.id);
+    if (!Number.isInteger(propertyId)) {
+      res.status(400).json({ error: 'invalid property id' });
+      return;
+    }
+
+    if (req.adminRole === 'operations') {
+      const scope = await resolveAdminClientScope(req);
+      const { rows: propRows } = await pool.query('SELECT organization_id FROM properties WHERE id = $1', [propertyId]);
+      if (propRows.length === 0) {
+        res.status(404).json({ error: 'property not found' });
+        return;
+      }
+      if (!scopeIncludes(scope, propRows[0].organization_id)) {
+        res.status(403).json({ error: 'you are not assigned to that client' });
+        return;
+      }
+    }
+
+    const input: PropertyPatchInput = req.body ?? {};
+    const fields: string[] = [];
+    const values: unknown[] = [];
+    let i = 1;
+    if (input.postcode !== undefined) { fields.push(`postcode = $${i++}`); values.push(input.postcode || null); }
+    if (input.tenantEmail !== undefined) { fields.push(`tenant_email = $${i++}`); values.push(input.tenantEmail || null); }
+    if (input.arraySizeKwp !== undefined) { fields.push(`array_size_kwp = $${i++}`); values.push(input.arraySizeKwp); }
+    if (input.batteryCapacityKwh !== undefined) { fields.push(`battery_capacity_kwh = $${i++}`); values.push(input.batteryCapacityKwh); }
+    if (fields.length === 0) {
+      res.status(400).json({ error: 'nothing to update' });
+      return;
+    }
+    values.push(propertyId);
+
+    try {
+      const { rows } = await pool.query(
+        `UPDATE properties SET ${fields.join(', ')} WHERE id = $${i} RETURNING id, postcode, tenant_email, array_size_kwp, battery_capacity_kwh`,
+        values
+      );
+      if (rows.length === 0) {
+        res.status(404).json({ error: 'property not found' });
+        return;
+      }
+      res.json(rows[0]);
+    } catch (err) {
+      if (isUniqueViolation(err)) {
+        res.status(409).json({ error: 'a property with that tenant email already exists' });
+        return;
+      }
+      throw err;
+    }
+  })
+);
+
+// Reassigning a property between clients is a cross-client action, out of
+// scope for a single operations/installer assignment -- super_admin only.
 adminRouter.patch(
   '/properties/:id/organization',
+  requireSuperAdmin,
   asyncHandler(async (req, res) => {
     const propertyId = Number(req.params.id);
     const organizationId = req.body?.organizationId === null ? null : Number(req.body?.organizationId);
@@ -195,8 +299,12 @@ interface OrganizationInput {
 
 const ORG_TYPES = ['HA', 'LA', 'other'];
 
+// Creating a new client is a super_admin action -- clients get assigned to
+// operations/installer staff afterward (see the /organizations/:id/assignments
+// endpoints below), rather than operations onboarding their own clients.
 adminRouter.post(
   '/organizations',
+  requireSuperAdmin,
   asyncHandler(async (req, res) => {
     const input: OrganizationInput = req.body ?? {};
     if (!input.name) {
@@ -218,13 +326,18 @@ adminRouter.post(
 
 adminRouter.get(
   '/organizations',
-  asyncHandler(async (_req, res) => {
-    const { rows } = await pool.query(`
-      SELECT o.id, o.name, o.type,
+  asyncHandler(async (req, res) => {
+    const scope = await resolveAdminClientScope(req);
+    const scopeClause = scope === 'all' ? '' : 'WHERE o.id = ANY($1::bigint[])';
+
+    const { rows } = await pool.query(
+      `SELECT o.id, o.name, o.type,
              (SELECT COUNT(*) FROM properties WHERE organization_id = o.id) AS property_count
       FROM organizations o
-      ORDER BY o.created_at DESC
-    `);
+      ${scopeClause}
+      ORDER BY o.created_at DESC`,
+      scope === 'all' ? [] : [scope]
+    );
     res.json({ organizations: rows });
   })
 );
@@ -239,12 +352,20 @@ const ORG_ROLES = ['portfolio_viewer', 'portfolio_admin', 'drilldown_viewer'];
 
 adminRouter.post(
   '/organizations/:id/users',
+  blockInstallerWrites,
   asyncHandler(async (req, res) => {
     const organizationId = Number(req.params.id);
     const input: OrgUserInput = req.body ?? {};
     if (!Number.isInteger(organizationId)) {
       res.status(400).json({ error: 'invalid organization id' });
       return;
+    }
+    if (req.adminRole === 'operations') {
+      const scope = await resolveAdminClientScope(req);
+      if (!scopeIncludes(scope, organizationId)) {
+        res.status(403).json({ error: 'you are not assigned to that client' });
+        return;
+      }
     }
     if (!input.name) {
       res.status(400).json({ error: 'name is required' });
@@ -275,21 +396,117 @@ adminRouter.post(
   })
 );
 
-// Team management (§ admin tiers) — super_admin only. install_staff can
-// onboard properties/organizations above, but can't add or remove admins.
+// Client assignments (Backend Interface spec) — which operations/installer
+// staff can act on which clients. super_admin only: assigning staff to
+// clients is how a super_admin delegates scope, so it can't be self-service.
+adminRouter.get(
+  '/organizations/:id/assignments',
+  requireSuperAdmin,
+  asyncHandler(async (req, res) => {
+    const organizationId = Number(req.params.id);
+    if (!Number.isInteger(organizationId)) {
+      res.status(400).json({ error: 'invalid organization id' });
+      return;
+    }
+    const { rows } = await pool.query(
+      `SELECT au.id, au.name, au.email, au.role
+       FROM admin_client_assignments aca
+       JOIN admin_users au ON au.id = aca.admin_user_id
+       WHERE aca.organization_id = $1
+       ORDER BY au.name`,
+      [organizationId]
+    );
+    res.json({ assignments: rows });
+  })
+);
+
+adminRouter.post(
+  '/organizations/:id/assignments',
+  requireSuperAdmin,
+  asyncHandler(async (req, res) => {
+    const organizationId = Number(req.params.id);
+    const adminUserId = Number(req.body?.adminUserId);
+    if (!Number.isInteger(organizationId) || !Number.isInteger(adminUserId)) {
+      res.status(400).json({ error: 'organizationId and adminUserId must both be integers' });
+      return;
+    }
+
+    const { rows: userRows } = await pool.query('SELECT role FROM admin_users WHERE id = $1', [adminUserId]);
+    if (userRows.length === 0) {
+      res.status(404).json({ error: 'admin user not found' });
+      return;
+    }
+    if (userRows[0].role === 'super_admin') {
+      res.status(400).json({ error: 'super_admin already has access to every client — no assignment needed' });
+      return;
+    }
+
+    try {
+      await pool.query(
+        'INSERT INTO admin_client_assignments (admin_user_id, organization_id) VALUES ($1, $2)',
+        [adminUserId, organizationId]
+      );
+      res.status(201).json({ status: 'ok' });
+    } catch (err) {
+      if (isUniqueViolation(err)) {
+        res.status(409).json({ error: 'already assigned to this client' });
+        return;
+      }
+      throw err;
+    }
+  })
+);
+
+adminRouter.delete(
+  '/organizations/:id/assignments/:adminUserId',
+  requireSuperAdmin,
+  asyncHandler(async (req, res) => {
+    const organizationId = Number(req.params.id);
+    const adminUserId = Number(req.params.adminUserId);
+    if (!Number.isInteger(organizationId) || !Number.isInteger(adminUserId)) {
+      res.status(400).json({ error: 'invalid id' });
+      return;
+    }
+    const { rowCount } = await pool.query(
+      'DELETE FROM admin_client_assignments WHERE organization_id = $1 AND admin_user_id = $2',
+      [organizationId, adminUserId]
+    );
+    if (rowCount === 0) {
+      res.status(404).json({ error: 'not found' });
+      return;
+    }
+    res.json({ status: 'ok' });
+  })
+);
+
+// Team management (§ admin tiers) — super_admin only. operations/installer
+// can act within their assigned clients (see the scope helpers above and the
+// /organizations/:id/assignments endpoints below), but can't add or remove
+// admins or change who's assigned to what.
 interface AdminUserInput {
   name?: string;
   email?: string;
   role?: string;
 }
 
-const ADMIN_ROLES = ['super_admin', 'install_staff'];
+const ADMIN_ROLES = ['super_admin', 'operations', 'installer'];
 
 adminRouter.get(
   '/team',
   requireSuperAdmin,
   asyncHandler(async (_req, res) => {
-    const { rows } = await pool.query('SELECT id, name, email, role, created_at FROM admin_users ORDER BY created_at');
+    const { rows } = await pool.query(`
+      SELECT au.id, au.name, au.email, au.role, au.created_at,
+             COALESCE(
+               (SELECT array_agg(o.name ORDER BY o.name)
+                FROM admin_client_assignments aca
+                JOIN organizations o ON o.id = aca.organization_id
+                WHERE aca.admin_user_id = au.id),
+               ARRAY[]::text[]
+             ) AS assigned_clients
+      FROM admin_users au
+      ORDER BY au.created_at
+    `);
     res.json({ team: rows });
   })
 );

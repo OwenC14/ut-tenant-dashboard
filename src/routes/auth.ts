@@ -5,6 +5,7 @@ import { sendMagicLinkEmail } from '../lib/mailer';
 import { asyncHandler } from '../lib/asyncHandler';
 import { isUniqueViolation } from '../lib/db';
 import { env } from '../config/env';
+import { getCurrentAgreement, getCurrentConsentStatus, recordConsent } from '../consent/agreements';
 
 export const authRouter = Router();
 
@@ -100,6 +101,22 @@ authRouter.get(
       sameSite: 'lax',
       maxAge: SESSION_COOKIE_MAX_AGE_MS,
     });
+
+    // Tenant Interface spec: signing in itself carries the ha_data_sharing
+    // notice ("by signing in, you agree to share your data and can opt out")
+    // rather than a separate accept/decline banner shown afterward. Only
+    // fires when this property has never decided for the CURRENT agreement
+    // version -- an explicit withdraw/decline already on record is never
+    // silently overwritten, and a version bump naturally re-applies this
+    // once (status resets to null for the new version, same as before).
+    const haAgreement = await getCurrentAgreement('ha_data_sharing');
+    if (haAgreement) {
+      const consent = await getCurrentConsentStatus(propertyId, 'ha_data_sharing');
+      if (consent && consent.status === null) {
+        await recordConsent(propertyId, haAgreement.id, 'accepted', { recordedBy: 'implied_at_signin' });
+      }
+    }
+
     res.redirect('/dashboard.html');
   })
 );

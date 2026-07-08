@@ -1,7 +1,4 @@
 # Render deploy skeleton (§3, §10 step 1).
-# Background worker(s) for the poller/token-refresher/rollup jobs (§6) get added
-# as separate `type: worker` / `type: cron` services once those jobs exist —
-# not needed for the initial scaffold.
 services:
   - type: web
     name: ut-tenant-dashboard-api
@@ -9,6 +6,65 @@ services:
     plan: starter
     buildCommand: npm install && npm run build && npm run migrate
     startCommand: npm run start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: ut-tenant-dashboard-db
+          property: connectionString
+
+  # Poller/refresher/rollup jobs (src/jobs/*.ts, §4.2/§4.3, §5) exist in code
+  # but nothing was ever scheduling them -- without these, no Fox usage data
+  # or cost figures actually get collected in production regardless of how
+  # correct the app code is. All three share the same build and DATABASE_URL
+  # as the web service above; `env: node` cron services on Render run the
+  # buildCommand once per invocation (there's no persistent process to build
+  # ahead of time the way the web service has), so runs cost a short build
+  # step each time -- acceptable at this job frequency and pilot scale.
+  - type: cron
+    name: ut-tenant-dashboard-poll
+    env: node
+    plan: starter
+    schedule: "*/15 * * * *"
+    buildCommand: npm install && npm run build
+    startCommand: npm run poll
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: ut-tenant-dashboard-db
+          property: connectionString
+
+  - type: cron
+    name: ut-tenant-dashboard-refresh-tokens
+    env: node
+    plan: starter
+    # Refreshes anything expiring within the next 60 minutes
+    # (REFRESH_WINDOW_MINUTES in src/jobs/refresh-tokens.ts) -- running every
+    # 30 minutes gives two chances to catch each token before it expires.
+    schedule: "*/30 * * * *"
+    buildCommand: npm install && npm run build
+    startCommand: npm run refresh-tokens
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: ut-tenant-dashboard-db
+          property: connectionString
+
+  - type: cron
+    name: ut-tenant-dashboard-rollup
+    env: node
+    plan: starter
+    # Defaults to "yesterday" (src/jobs/rollup.ts) -- run early enough in the
+    # morning that the day's meter_readings are all in, but not so late that
+    # a tenant checking their dashboard first thing sees stale data.
+    schedule: "0 2 * * *"
+    buildCommand: npm install && npm run build
+    startCommand: npm run rollup
     envVars:
       - key: NODE_ENV
         value: production

@@ -37,7 +37,7 @@ export async function createAdminSession(adminUserId: number): Promise<string> {
 
 export interface AdminSessionInfo {
   adminUserId: number;
-  role: 'super_admin' | 'install_staff';
+  role: 'super_admin' | 'operations' | 'installer';
 }
 
 export async function resolveAdminSession(token: string): Promise<AdminSessionInfo | null> {

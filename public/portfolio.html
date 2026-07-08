@@ -28,16 +28,21 @@
 
 <div class="hero"><div class="inner"><h1>Portfolio savings overview</h1></div></div>
 
-<div class="pagenav">
-  <div class="pagenav-inner" id="rangeSelector">
-    <button type="button" data-range="24h">24 hour</button>
-    <button type="button" data-range="week">Week</button>
-    <button type="button" data-range="month" class="active">Month</button>
-    <button type="button" data-range="year">Year</button>
-  </div>
-</div>
+<div class="wrap" style="margin-top:40px;">
 
-<div class="wrap">
+  <div class="card" style="margin-bottom:24px;">
+    <h2>Portfolio bill with and without Phase 1</h2>
+    <div class="pagenav" style="margin:0 0 18px; top:0; padding:0;">
+      <div class="pagenav-inner" id="rangeSelector">
+        <button type="button" data-range="24h">24 hour</button>
+        <button type="button" data-range="week">Week</button>
+        <button type="button" data-range="month" class="active">Month</button>
+        <button type="button" data-range="year">Year</button>
+      </div>
+    </div>
+    <p class="hint" style="margin-bottom:14px;" id="portfolioChartHint">Every property in this portfolio, summed day by day — what they'd have paid at grid price only, versus what solar and battery actually brought it down to.</p>
+    <div id="portfolioChart"></div>
+  </div>
 
   <div class="result-card" style="margin-bottom:24px;">
     <div class="bill-compare">
@@ -71,16 +76,10 @@
     </div>
   </div>
 
-  <div class="card" style="margin-bottom:24px;">
-    <h2>Portfolio bill with and without Phase 1</h2>
-    <p class="hint" style="margin-bottom:14px;" id="portfolioChartHint">Every property in this portfolio, summed day by day — what they'd have paid at grid price only, versus what solar and battery actually brought it down to.</p>
-    <div id="portfolioChart"></div>
-  </div>
-
   <div class="card" id="propertyDetailCard" style="display:none; margin-bottom:24px;">
     <h2>Property detail<span id="propertyDetailAddress"></span></h2>
-    <div id="propertyDetailSummary" class="demand-readout" style="margin-bottom:16px;"></div>
     <div id="propertyDetailChart"></div>
+    <div id="propertyDetailSummary" class="demand-readout" style="margin-top:16px;"></div>
   </div>
 
   <div class="card">
@@ -92,6 +91,7 @@
       show a status pill you can click for what to do next.
     </p>
     <div class="filter-bar">
+      <a href="#" id="exportCsv" class="btn btn-secondary" style="text-decoration:none; padding:8px 16px; font-size:12.5px; margin-right:auto;">Download CSV</a>
       <label for="statusFilter">Status</label>
       <select id="statusFilter">
         <option value="">All statuses</option>
